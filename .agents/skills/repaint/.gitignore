@@ -1,8 +1,0 @@
-.DS_Store
-node_modules/
-dist/
-*.log
-
-# agent-skills-eval run artifacts (the eval harness writes a workspace per run)
-agent-skills-workspace/
-*-workspace/
