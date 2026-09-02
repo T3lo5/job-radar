@@ -41,13 +41,11 @@ Você vai precisar instalar algumas ferramentas básicas. Não se assuste — é
 Abra o terminal (no Windows, use PowerShell ou o terminal do VS Code) e execute:
 
 ```bash
-git clone https://github.com/seu-usuario/job-vacancy-tracker.git
+git clone https://github.com/T3lo5/job-radar.git
 cd job-vacancy-tracker
 ```
 
-> Substitua `seu-usuario` pelo nome do usuário/organização onde o projeto estiver hospedado.
-
-Isso vai criar uma pasta chamada `job-vacancy-tracker` no seu computador com todos os arquivos do sistema.
+Isso vai criar uma pasta chamada `job-radar` no seu computador com todos os arquivos do sistema.
 
 ---
 
