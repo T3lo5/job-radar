@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "repaint": {
+      "source": "LucasSantana-Dev/repaint",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "24c1c2125d760ecfa3e8cd117a19ec18890ea5d31756d6d68cb7e5faf3ceafc7"
+    },
+    "revenue-centric-design": {
+      "source": "heliocosta-dev/revenue-centric-design",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "181a258638e851e878190e9b3dcbf6ca169c434ed09d31c45341148366bc9391"
+    }
+  }
+}

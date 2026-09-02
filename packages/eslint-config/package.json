@@ -1,0 +1,26 @@
+{
+  "name": "@job-radar/eslint-config",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Configuração ESLint base compartilhada (flat config, ESM)",
+  "type": "module",
+  "main": "base.js",
+  "exports": {
+    "./base": "./base.js",
+    "./node": "./node.js",
+    "./react": "./react.js"
+  },
+  "files": [
+    "base.js",
+    "node.js",
+    "react.js"
+  ],
+  "peerDependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^9.0.0",
+    "eslint-plugin-react": "^7.0.0",
+    "eslint-plugin-react-hooks": "^5.0.0"
+  },
+  "license": "UNLICENSED"
+}

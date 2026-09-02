@@ -1,0 +1,128 @@
+{
+  "_doc": "Regression baseline for the repaint evals. Gate on the DELTA vs this, not the absolute. See evals/README.md for the six gate rules. Sibling to evals.json \u2014 never merge in.",
+  "harness": "agent-skills-eval@0.1.1",
+  "target_model": "z-ai/glm-4.6",
+  "judge_model": "openai/gpt-4.1-mini",
+  "base_url": "https://openrouter.ai/api/v1",
+  "date": "2026-06-23",
+  "runs": 3,
+  "mode": "with_skill",
+  "eval_count": 25,
+  "validates_commit": "5e82a0c (distillation + absorb \u00a7B/\u00a7L + regression fixes)",
+  "aggregate_pass_rate_mean": 0.8868,
+  "per_run_pass_rate": [
+    0.9136,
+    0.9198,
+    0.8272
+  ],
+  "noise_band_pp": 6.0,
+  "noise_band_note": "Working gate ~6pp. Observed per-cycle spread: runs4-6=3.7pp, runs7-9=6.2pp, runs10-12=9.3pp (last inflated by one low-outlier run at 82.7pct \u2014 judge variance). Treat a lone low run as noise; gate on the 3-run mean.",
+  "method": "Assertion-level pass-rate per run, averaged over 3 runs. Per-eval = median passed across the 3 runs.",
+  "history": "23-eval baseline (runs1-3)=88.4pct. Distillation (runs4-6) overlap rose to 91.5pct (+3.1pp). Absorb B/L (runs7-9)=88.3pct with eval-6/eval-12 regressions. Scope-guard fixes (runs10-12, THIS)=88.7pct: eval-6 recovered, eval-12 substantially recovered (1 to 3), eval-24 fixed (3 to 6).",
+  "tool_stall_note": "A lone 0/N on an inspect/fixture eval is a single-shot/tool-less harness artifact. Judge per-eval by majority across runs.",
+  "known_weak": {
+    "12": "Register-disambiguation: model now PASSES the 3 substantive assertions (surfaces ambiguity, names both interpretations, does NOT build a full page) \u2014 dangerous behavior fixed. Residual: the conditional 'asks exactly ONE focused question' trails (consistent 3/4). Accepted \u2014 core behavior restored; chasing the last assertion risks plateau collateral."
+  },
+  "per_eval_median": {
+    "0": {
+      "passed": 7,
+      "total": 8
+    },
+    "1": {
+      "passed": 5,
+      "total": 6
+    },
+    "2": {
+      "passed": 6,
+      "total": 6
+    },
+    "3": {
+      "passed": 6,
+      "total": 7
+    },
+    "4": {
+      "passed": 6,
+      "total": 6
+    },
+    "5": {
+      "passed": 6,
+      "total": 6
+    },
+    "6": {
+      "passed": 6,
+      "total": 6
+    },
+    "7": {
+      "passed": 7,
+      "total": 7
+    },
+    "8": {
+      "passed": 6,
+      "total": 6
+    },
+    "9": {
+      "passed": 7,
+      "total": 7
+    },
+    "10": {
+      "passed": 7,
+      "total": 7
+    },
+    "11": {
+      "passed": 6,
+      "total": 6
+    },
+    "12": {
+      "passed": 3,
+      "total": 4
+    },
+    "13": {
+      "passed": 8,
+      "total": 8
+    },
+    "14": {
+      "passed": 5,
+      "total": 6
+    },
+    "15": {
+      "passed": 6,
+      "total": 6
+    },
+    "16": {
+      "passed": 6,
+      "total": 6
+    },
+    "17": {
+      "passed": 6,
+      "total": 6
+    },
+    "18": {
+      "passed": 6,
+      "total": 6
+    },
+    "19": {
+      "passed": 8,
+      "total": 8
+    },
+    "20": {
+      "passed": 5,
+      "total": 8
+    },
+    "21": {
+      "passed": 6,
+      "total": 6
+    },
+    "22": {
+      "passed": 5,
+      "total": 7
+    },
+    "23": {
+      "passed": 6,
+      "total": 7
+    },
+    "24": {
+      "passed": 6,
+      "total": 6
+    }
+  }
+}

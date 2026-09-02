@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "AiRunType" ADD VALUE 'SUMMARIZE';

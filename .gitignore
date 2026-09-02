@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+.turbo/
+*.tsbuildinfo
+
+# Env — nunca versione segredos
+.env
+.env.local
+.env.*.local
+!.env.example
+apps/api/.env
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+!.vscode/extensions.json
+.idea/
+
+# Coverage
+coverage/
+*.lcov
+
+# Prisma
+prisma/migrations/dev/
+
+# Uploads locais de CV
+apps/api/uploads/
+
+# Test artifacts
+test-results/
+.playwright/
+.vite/

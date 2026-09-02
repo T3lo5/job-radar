@@ -1,0 +1,15 @@
+node_modules
+dist
+.git
+.gitignore
+.dockerignore
+Dockerfile
+web
+README.md
+**/*.log
+.scratch
+storage
+coverage
+.eslintcache
+.vscode
+.idea

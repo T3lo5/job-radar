@@ -1,0 +1,125 @@
+name: job-radar
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: job-radar-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-jobradar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-jobradar}
+      POSTGRES_DB: ${POSTGRES_DB:-jobradar}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - jobradar-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-jobradar} -d ${POSTGRES_DB:-jobradar}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  redis:
+    image: redis:7-alpine
+    container_name: job-radar-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - jobradar-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 3s
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: ${API_TARGET:-dev}
+    container_name: job-radar-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      APP_PORT: 3001
+      APP_HOST: 0.0.0.0
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: postgres://${POSTGRES_USER:-jobradar}:${POSTGRES_PASSWORD:-jobradar}@postgres:5432/${POSTGRES_DB:-jobradar}
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "${APP_PORT:-3001}:3001"
+    volumes:
+      - api-storage:/app/storage
+    networks:
+      - jobradar-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://127.0.0.1:3001/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      target: ${WEB_TARGET:-dev}
+    container_name: job-radar-web
+    restart: unless-stopped
+    environment:
+      WEB_PORT: 5173
+      WEB_HOST: 0.0.0.0
+      API_URL: http://api:3001
+    ports:
+      - "${WEB_PORT:-5173}:${WEB_PORT_INTERNAL:-5173}"
+    volumes:
+      - ./apps/web/src:/app/apps/web/src:ro
+      - ./packages/shared/src:/app/packages/shared/src:ro
+    networks:
+      - jobradar-net
+    depends_on:
+      - api
+    profiles: ["dev"]
+
+  web-prod:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      target: prod
+    container_name: job-radar-web-prod
+    restart: unless-stopped
+    environment:
+      API_URL: http://api:3001
+    ports:
+      - "${WEB_PORT_PROD:-8080}:80"
+    networks:
+      - jobradar-net
+    depends_on:
+      - api
+    profiles: ["prod"]
+
+networks:
+  jobradar-net:
+    name: jobradar-net
+    driver: bridge
+
+volumes:
+  postgres-data:
+    name: job-radar-postgres-data
+  redis-data:
+    name: job-radar-redis-data
+  api-storage:
+    name: job-radar-api-storage

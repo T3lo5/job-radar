@@ -1,0 +1,7 @@
+export { PipelineOrchestrator } from './orchestrator.js'
+export type { PipelineDeps } from './orchestrator.js'
+export { ExtractionStep } from './extraction-step.js'
+export { MatchingStep } from './matching-step.js'
+export { AnalysisStep, mapRecomendacao, generateBasicAnalysis } from './analysis-step.js'
+export type { AnalysisInput } from './analysis-step.js'
+export type { ProcessingStep, StepDependencies, ProcessingContext } from './step.js'

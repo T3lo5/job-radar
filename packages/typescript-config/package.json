@@ -1,0 +1,13 @@
+{
+  "name": "@job-radar/typescript-config",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Configuração TypeScript base compartilhada",
+  "files": [
+    "base.json",
+    "node.json",
+    "react.json",
+    "react-library.json"
+  ],
+  "license": "UNLICENSED"
+}
