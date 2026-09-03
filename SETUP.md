@@ -9,6 +9,7 @@ Este manual vai te ajudar a colocar o sistema para rodar no seu computador e apr
 ## O que é o Job Radar?
 
 O Job Radar é um assistente pessoal que:
+
 - Busca vagas de tecnologia automaticamente em várias fontes
 - Compara cada vaga com o seu perfil e calcula uma **nota de 0 a 100**
 - Mostra o que você precisa melhorar para se encaixar melhor em cada vaga
@@ -24,15 +25,15 @@ Tudo isso roda no **seu computador**, os seus dados ficam com você, e o sistema
 
 Você vai precisar instalar algumas ferramentas básicas. Não se assuste — é só uma vez:
 
-| O que instalar | Para que serve | Como instalar |
-|----------------|----------------|---------------|
-| **Git** | Para baixar o projeto | https://git-scm.com/downloads |
-| **Node.js 20+** | O motor que roda o sistema | https://nodejs.org/ |
-| **pnpm** | Gerenciador de pacotes | https://pnpm.io/installation |
-| **Docker + Docker Compose** | Banco de dados e cache (o sistema usa para guardar suas informações) | https://docs.docker.com/get-docker/ |
-| **Editor de texto** (recomendado: VS Code) | Para editar arquivos de configuração | https://code.visualstudio.com/ |
+| O que instalar                             | Para que serve                                                       | Como instalar                       |
+| ------------------------------------------ | -------------------------------------------------------------------- | ----------------------------------- |
+| **Git**                                    | Para baixar o projeto                                                | https://git-scm.com/downloads       |
+| **Node.js 20+**                            | O motor que roda o sistema                                           | https://nodejs.org/                 |
+| **pnpm**                                   | Gerenciador de pacotes                                               | https://pnpm.io/installation        |
+| **Docker + Docker Compose**                | Banco de dados e cache (o sistema usa para guardar suas informações) | https://docs.docker.com/get-docker/ |
+| **Editor de texto** (recomendado: VS Code) | Para editar arquivos de configuração                                 | https://code.visualstudio.com/      |
 
-> 💡 **Dica para usuários Windows:** recomendamos usar o [WSL2](https://learn.microsoft.com/pt-br/windows/wsl/install) para rodar os comandos de forma mais simples. Se você não sabe o que é WSL, pode tentar direto no Windows mesmo — se der erro, volte aqui e siga o guia do WSL.
+> 💡 **Dica para usuários Windows:** use `.\dev-up.ps1` no PowerShell ou `.\dev-up.sh` no Git Bash/WSL — ambos fazem a mesma coisa. Na primeira execução, talvez precise rodar `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser` no PowerShell.
 
 ---
 
@@ -42,7 +43,7 @@ Abra o terminal (no Windows, use PowerShell ou o terminal do VS Code) e execute:
 
 ```bash
 git clone https://github.com/T3lo5/job-radar.git
-cd job-vacancy-tracker
+cd job-radar
 ```
 
 Isso vai criar uma pasta chamada `job-radar` no seu computador com todos os arquivos do sistema.
@@ -73,20 +74,20 @@ Agora abra o arquivo `.env` no seu editor de texto (VS Code, Bloco de Notas, etc
 
 #### Variáveis obrigatórias (primeira vez)
 
-| Variável | O que é | O que colocar |
-|----------|---------|---------------|
-| `SETTINGS_ENCRYPTION_KEY` | A chave secreta que você gerou acima | Cole o texto copiado |
-| `DATABASE_URL` | Endereço do banco de dados | Use o valor padrão do `.env.example` se for rodar localmente |
-| `REDIS_URL` | Endereço do Redis | Use o valor padrão do `.env.example` se for rodar localmente |
+| Variável                  | O que é                              | O que colocar                                                |
+| ------------------------- | ------------------------------------ | ------------------------------------------------------------ |
+| `SETTINGS_ENCRYPTION_KEY` | A chave secreta que você gerou acima | Cole o texto copiado                                         |
+| `DATABASE_URL`            | Endereço do banco de dados           | Use o valor padrão do `.env.example` se for rodar localmente |
+| `REDIS_URL`               | Endereço do Redis                    | Use o valor padrão do `.env.example` se for rodar localmente |
 
 #### Variáveis opcionais (só se você quiser usar esses recursos)
 
-| Variável | O que é | O que colocar |
-|----------|---------|---------------|
+| Variável             | O que é                                               | O que colocar                             |
+| -------------------- | ----------------------------------------------------- | ----------------------------------------- |
 | `TELEGRAM_BOT_TOKEN` | Token do bot do Telegram para receber resumos diários | Veja a seção "Configurar Telegram" abaixo |
-| `TELEGRAM_CHAT_ID` | Seu chat ID no Telegram | Veja a seção "Configurar Telegram" abaixo |
-| `OPENAI_API_KEY` | Chave da OpenAI (para IA) | Veja a seção "Configurar IA" abaixo |
-| `ANTHROPIC_API_KEY` | Chave da Anthropic (para IA) | Veja a seção "Configurar IA" abaixo |
+| `TELEGRAM_CHAT_ID`   | Seu chat ID no Telegram                               | Veja a seção "Configurar Telegram" abaixo |
+| `OPENAI_API_KEY`     | Chave da OpenAI (para IA)                             | Veja a seção "Configurar IA" abaixo       |
+| `ANTHROPIC_API_KEY`  | Chave da Anthropic (para IA)                          | Veja a seção "Configurar IA" abaixo       |
 
 > **Importante:** Se você não configurar nenhuma chave de IA agora, o sistema vai funcionar normalmente, mas algumas funcionalidades (como otimização de CV e análise de vagas) vão estar desligadas até você configurar.
 
@@ -100,7 +101,14 @@ A forma mais simples de iniciar tudo é com o comando:
 ./dev-up.sh
 ```
 
+**No Windows (PowerShell):**
+
+```powershell
+.\dev-up.ps1
+```
+
 Esse script faz tudo automaticamente:
+
 1. Verifica se as dependências estão instaladas
 2. Sobe o banco de dados (PostgreSQL) e o cache (Redis) via Docker
 3. Cria as tabelas no banco
@@ -109,6 +117,7 @@ Esse script faz tudo automaticamente:
 6. Mostra os logs na tela
 
 Você vai ver uma mensagem como:
+
 ```
 ========================================
   Job Radar is running!
@@ -124,19 +133,30 @@ Você vai ver uma mensagem como:
 Quando quiser parar, pressione `Ctrl+C` no terminal.
 
 Para parar tudo incluindo o banco de dados:
+
 ```bash
 docker compose down
 ```
 
 ### Outros comandos úteis
 
-| Comando | Para que serve |
-|---------|---------------|
-| `./dev-up.sh` | Inicia tudo e mostra logs |
-| `./dev-up.sh --reset` | Apaga o banco e recomeça do zero (CUIDADO!) |
-| `./dev-up.sh --no-logs` | Inicia sem mostrar logs (rode em outro terminal: `docker compose logs -f`) |
-| `./dev-down.sh` | Para o sistema mas mantém o banco rodando |
-| `docker compose down` | Para tudo, incluindo banco e cache |
+| Comando                 | Para que serve                              |
+| ----------------------- | ------------------------------------------- |
+| `./dev-up.sh`           | Inicia tudo e mostra logs                   |
+| `./dev-up.sh --reset`   | Apaga o banco e recomeça do zero (CUIDADO!) |
+| `./dev-up.sh --no-logs` | Inicia sem mostrar logs                     |
+| `./dev-down.sh`         | Para o sistema mas mantém o banco rodando   |
+| `docker compose down`   | Para tudo, incluindo banco e cache          |
+
+**No Windows (PowerShell):**
+
+| Comando                | Para que serve                              |
+| ---------------------- | ------------------------------------------- |
+| `.\dev-up.ps1`         | Inicia tudo e mostra logs                   |
+| `.\dev-up.ps1 -Reset`  | Apaga o banco e recomeça do zero (CUIDADO!) |
+| `.\dev-up.ps1 -NoLogs` | Inicia sem mostrar logs                     |
+| `.\dev-down.ps1`       | Para o sistema mas mantém o banco rodando   |
+| `docker compose down`  | Para tudo, incluindo banco e cache          |
 
 ---
 
@@ -166,6 +186,7 @@ Depois do setup inicial, você pode ajustar tudo em **Configurações** (ícone 
 ### Configurar provedor de IA (opcional mas recomendado)
 
 A IA é usada para:
+
 - Analisar vagas e calcular o match score
 - Otimizar seu currículo para uma vaga específica
 - Gerar resumos de descrições de vagas
@@ -197,12 +218,14 @@ Por padrão, algumas fontes já estão ativadas. Para gerenciar:
 4. Algumas fontes precisam de credenciais adicionais:
 
 #### LinkedIn via Apify (opcional)
+
 - Clique em **LinkedIn via Apify**
 - Você precisa de uma conta no [Apify](https://apify.com/)
 - Cole o token API no campo indicado
 - Clique em **Salvar Token**
 
 #### Adzuna (opcional)
+
 - Clique em **Adzuna**
 - Cadastre-se gratuitamente em https://developer.adzuna.com/signup
 - Cole o `App ID` e `App Key` nos campos indicados
@@ -221,6 +244,7 @@ Para o sistema buscar vagas automaticamente:
 3. Altere os horários se quiser e clique em **Salvar**
 
 > **Formato dos horários:** `minuto hora dia-do-mês mês dia-da-semana`
+>
 > - `0 6 * * *` = Todo dia às 6h
 > - `*/6 * * * *` = A cada 6 horas
 > - `0 9 * * 1-5` = Dias úteis às 9h
@@ -246,13 +270,16 @@ Para receber resumos diários das melhores vagas no Telegram:
 ## Usando o sistema no dia a dia
 
 ### Dashboard
+
 A página inicial mostra:
+
 - Quantas vagas você tem no sistema
 - Quantas candidaturas estão em andamento
 - As vagas com maior match score
 - Vagas coletadas recentemente
 
 ### Vagas
+
 - Clique em **Vagas** no menu
 - Use os filtros para buscar por palavra-chave, modalidade, fonte, etc.
 - Veja o **match score** (nota de 0 a 100) em cada vaga
@@ -262,12 +289,14 @@ A página inicial mostra:
   - Ações: avaliar match, adicionar à candidatura, otimizar CV
 
 ### Candidaturas (Kanban)
+
 - Clique em **Candidaturas**
 - Arraste os cards entre colunas para atualizar o status:
   - 🔵 Encontrada → 🟡 Interessante → 🟢 Aplicada → 🟠 Entrevista → 🟢🏆 Oferta ou 🔴 Rejeitada
 - Clique em um card para ver detalhes e adicionar notas, contatos, salário
 
 ### Perfil
+
 - Clique em **Perfil**
 - Preencha todas as seções:
   - **Informações gerais:** título, senioridade, localização, modalidade
@@ -282,6 +311,7 @@ A página inicial mostra:
 > 💡 Quanto mais completo estiver seu perfil, mais preciso será o match score.
 
 ### Otimizar CV
+
 - Acesse **Otimizar CV**
 - Selecione uma vaga (ou cole a descrição manualmente)
 - Clique em **Otimizar**
@@ -291,6 +321,7 @@ A página inicial mostra:
 > **Atenção:** a IA só usa informações que já estão no seu perfil e currículo. Ela não inventa dados.
 
 ### Analytics
+
 - Clique em **Analytics**
 - Veja estatísticas: vagas coletadas, candidaturas, taxa de match, skills mais requisitadas
 
@@ -315,6 +346,7 @@ Se você modificou algo no código, as alterações serão mantidas. O `git pull
 O Job Radar é **software livre** licenciado sob a **GNU General Public License v3.0 (GPL-3)**.
 
 Isso significa que:
+
 - Você pode usar, modificar e distribuir este software livremente
 - Qualquer modificação ou trabalho derivado deve ser distribuído sob a **mesma licença**
 - O código fonte deve estar disponível para os usuários
@@ -366,6 +398,7 @@ Verifique se a chave foi colada corretamente e se o provedor está ativo nas con
 ## Suporte
 
 Se você encontrar problemas:
+
 1. Verifique a seção "Problemas comuns" acima
 2. Consulte a documentação em `CONTEXT.md`
 3. Abra uma issue no repositório do projeto

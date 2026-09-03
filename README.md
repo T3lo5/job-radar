@@ -62,29 +62,40 @@
 
 Antes de começar, você vai precisar instalar algumas ferramentas básicas. Não se assuste — é só uma vez:
 
-| O que instalar | Para que serve | Como instalar |
-|----------------|----------------|---------------|
-| **Git** | Para baixar o projeto | https://git-scm.com/downloads |
-| **Node.js 20+** | O motor que roda o sistema | https://nodejs.org/ |
-| **pnpm** | Gerenciador de pacotes | https://pnpm.io/installation |
-| **Docker + Docker Compose** | Banco de dados e cache (o sistema usa para guardar suas informações) | https://docs.docker.com/get-docker/ |
-| **Editor de texto** (recomendado: VS Code) | Para editar arquivos de configuração | https://code.visualstudio.com/ |
+| O que instalar                             | Para que serve                                                       | Como instalar                       |
+| ------------------------------------------ | -------------------------------------------------------------------- | ----------------------------------- |
+| **Git**                                    | Para baixar o projeto                                                | https://git-scm.com/downloads       |
+| **Node.js 20+**                            | O motor que roda o sistema                                           | https://nodejs.org/                 |
+| **pnpm**                                   | Gerenciador de pacotes                                               | https://pnpm.io/installation        |
+| **Docker + Docker Compose**                | Banco de dados e cache (o sistema usa para guardar suas informações) | https://docs.docker.com/get-docker/ |
+| **Editor de texto** (recomendado: VS Code) | Para editar arquivos de configuração                                 | https://code.visualstudio.com/      |
 
-> 💡 **Dica para usuários Windows:** recomendamos usar o [WSL2](https://learn.microsoft.com/pt-br/windows/wsl/install) para rodar os comandos de forma mais simples. Se você não sabe o que é WSL, pode tentar direto no Windows mesmo — se der erro, volte aqui e siga o guia do WSL.
+> 💡 **Dica para usuários Windows:** use `.\dev-up.ps1` (PowerShell) ou `.\dev-up.sh` (git bash/WSL) — ambos fazem a mesma coisa. Se nenhum funcionar, instale o [WSL2](https://learn.microsoft.com/pt-br/windows/wsl/install) e use os comandos Linux. Em PowerShell, você pode precisar executar `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser` antes da primeira execução.
 
 ## Setup local
 
 ### Quick Start (recomendado)
 
 ```bash
-git clone https://github.com/seu-usuario/job-vacancy-tracker.git
-cd job-vacancy-tracker
+git clone https://github.com/T3lo5/job-radar.git
+cd job-radar
 cp .env.example .env
 # Edite o .env com suas configurações
 ./dev-up.sh
 ```
 
+**No Windows (PowerShell):**
+
+```powershell
+git clone https://github.com/T3lo5/job-radar.git
+cd job-radar
+cp .env.example .env
+# Edite o .env com suas configurações
+.\dev-up.ps1
+```
+
 Esse script automatiza tudo:
+
 1. Verifica dependências
 2. Sobe containers (PostgreSQL, Redis)
 3. Roda migrations
@@ -93,6 +104,7 @@ Esse script automatiza tudo:
 6. Mostra logs combinados
 
 Acesse:
+
 - Frontend: http://localhost:5173
 - API: http://localhost:3001
 - API Health: http://localhost:3001/health
@@ -107,12 +119,16 @@ Acesse:
 ./dev-up.sh --no-logs # Inicia sem mostrar logs
 ```
 
+**No Windows (PowerShell):** `.\dev-up.ps1`, `.\dev-up.ps1 -Reset`, `.\dev-up.ps1 -NoLogs`
+
 ### Parar os servidores
 
 ```bash
 ./dev-down.sh         # Para API e Web
 docker compose down   # Para tudo (incluindo containers)
 ```
+
+**No Windows:** `.\dev-down.ps1`
 
 ## Scripts
 
@@ -134,40 +150,40 @@ docker compose down   # Para tudo (incluindo containers)
 
 ## API Endpoints
 
-| Método | Endpoint | Descrição |
-|--------|----------|-----------|
-| GET | `/health` | Health check |
-| GET | `/health/ready` | Health check com DB + Redis |
-| GET | `/api/profile` | Perfil atual |
-| PUT | `/api/profile` | Atualizar perfil |
-| POST | `/api/profile/skills` | Adicionar skill |
-| DELETE | `/api/profile/skills/:id` | Remover skill |
-| POST | `/api/profile/education` | Adicionar formação |
-| PUT | `/api/profile/education/:id` | Atualizar formação |
-| DELETE | `/api/profile/education/:id` | Remover formação |
-| POST | `/api/profile/certifications` | Adicionar certificado |
-| PUT | `/api/profile/certifications/:id` | Atualizar certificado |
-| DELETE | `/api/profile/certifications/:id` | Remover certificado |
-| POST | `/api/profile/projects` | Adicionar projeto |
-| PUT | `/api/profile/projects/:id` | Atualizar projeto |
-| DELETE | `/api/profile/projects/:id` | Remover projeto |
-| POST | `/api/profile/work-experiences` | Adicionar experiência |
-| PUT | `/api/profile/work-experiences/:id` | Atualizar experiência |
-| DELETE | `/api/profile/work-experiences/:id` | Remover experiência |
-| POST | `/api/resumes` | Upload de currículo |
-| GET | `/api/resumes` | Listar currículos |
-| DELETE | `/api/resumes/:id` | Remover currículo |
-| POST | `/api/resumes/:id/extract` | Extrair texto do currículo |
-| GET | `/api/jobs` | Lista paginada de vagas |
-| GET | `/api/jobs/:id` | Detalhes de uma vaga |
-| POST | `/api/jobs` | Criar vaga manualmente |
-| PATCH | `/api/jobs/:id` | Atualizar vaga |
-| GET | `/api/jobs/stats` | Estatísticas |
-| POST | `/api/match/evaluate` | Avaliar job vs perfil |
-| GET | `/api/match/results` | Resultados de matching |
-| POST | `/api/admin/collect-now` | Forçar coleta de vagas |
-| GET | `/api/setup/status` | Status do setup |
-| POST | `/api/setup/complete` | Completar setup |
+| Método | Endpoint                            | Descrição                   |
+| ------ | ----------------------------------- | --------------------------- |
+| GET    | `/health`                           | Health check                |
+| GET    | `/health/ready`                     | Health check com DB + Redis |
+| GET    | `/api/profile`                      | Perfil atual                |
+| PUT    | `/api/profile`                      | Atualizar perfil            |
+| POST   | `/api/profile/skills`               | Adicionar skill             |
+| DELETE | `/api/profile/skills/:id`           | Remover skill               |
+| POST   | `/api/profile/education`            | Adicionar formação          |
+| PUT    | `/api/profile/education/:id`        | Atualizar formação          |
+| DELETE | `/api/profile/education/:id`        | Remover formação            |
+| POST   | `/api/profile/certifications`       | Adicionar certificado       |
+| PUT    | `/api/profile/certifications/:id`   | Atualizar certificado       |
+| DELETE | `/api/profile/certifications/:id`   | Remover certificado         |
+| POST   | `/api/profile/projects`             | Adicionar projeto           |
+| PUT    | `/api/profile/projects/:id`         | Atualizar projeto           |
+| DELETE | `/api/profile/projects/:id`         | Remover projeto             |
+| POST   | `/api/profile/work-experiences`     | Adicionar experiência       |
+| PUT    | `/api/profile/work-experiences/:id` | Atualizar experiência       |
+| DELETE | `/api/profile/work-experiences/:id` | Remover experiência         |
+| POST   | `/api/resumes`                      | Upload de currículo         |
+| GET    | `/api/resumes`                      | Listar currículos           |
+| DELETE | `/api/resumes/:id`                  | Remover currículo           |
+| POST   | `/api/resumes/:id/extract`          | Extrair texto do currículo  |
+| GET    | `/api/jobs`                         | Lista paginada de vagas     |
+| GET    | `/api/jobs/:id`                     | Detalhes de uma vaga        |
+| POST   | `/api/jobs`                         | Criar vaga manualmente      |
+| PATCH  | `/api/jobs/:id`                     | Atualizar vaga              |
+| GET    | `/api/jobs/stats`                   | Estatísticas                |
+| POST   | `/api/match/evaluate`               | Avaliar job vs perfil       |
+| GET    | `/api/match/results`                | Resultados de matching      |
+| POST   | `/api/admin/collect-now`            | Forçar coleta de vagas      |
+| GET    | `/api/setup/status`                 | Status do setup             |
+| POST   | `/api/setup/complete`               | Completar setup             |
 
 ## Distribuição e licença
 
@@ -201,6 +217,7 @@ Para mais detalhes, consulte o arquivo [`LICENSE`](./LICENSE).
 ## Como contribuir
 
 O Job Radar é um projeto **comunitário e livre**. Qualquer pessoa pode:
+
 - Reportar bugs
 - Sugerir novas funcionalidades
 - Melhorar a documentação

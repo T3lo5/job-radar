@@ -181,7 +181,7 @@ Se o objetivo é cobrir vagas LinkedIn **dentro da lei e do ToS**, as opções r
 
 ### 6.3. Recomendação para o Job Radar
 
-Para o projeto `job-vacancy-tracker`:
+Para o projeto `job-radar`:
 
 - **Não** implementar uma `LinkedInSource` baseada em scraping ou em sessão autenticada. É tecnicamente possível (proxies + Playwright), mas viola robots.txt, User Agreement §8.2, API ToS §3.1.24 e Crawling Terms, e expõe o projeto a cease & desist / ban / risco de "competitive service".
 - **Considerar** uma `LinkedInSource` que consome índice público via Google Custom Search ou Bing (com `site:linkedin.com/jobs`), registrada como JobSource que armazena apenas o `linkedin.com/jobs/view/<id>` URL público, sem armazenar conteúdo que viole §4 da API ToS.
@@ -329,7 +329,7 @@ Reportado em `linkedinsider.blog/linkedin-scraping-tools-safety` (2026-05-29, se
 4. **O precedente Proxycurl (2025) é o cenário adverso real.** Se o Usuário for um indivíduo com baixo volume, o risco de lawsuit é baixo (mas não-zero). Se o Usuário escalar e oferecer um "tracker de vagas" como produto, o perfil se parece com o da Nubela: cease & desist → lawsuit → injunction → shutdown. O caminho Proxycurl é a fronteira de fato entre "uso pessoal tolerado" e "uso comercial acionável".
 5. **A solução ToS-clean continua sendo a de §6.2 do doc principal**: Google Jobs/Bing index (`site:linkedin.com/jobs/view/...`), parceiros agregadores com contrato (Adzuna, Theirstack, Jooble), parceria direta com LinkedIn Talent Solutions (apenas para produtos de RH), ou ingestão manual por URL. Apify não entra na lista.
 
-**Implicação prática para o `job-vacancy-tracker`:** a existência de Actors de Apify **não** é razão para reverter a recomendação de §6.3. Pode-se, no máximo, considerar Apify para outras fontes (Indeed, Glassdoor, Adzuna-aggregator) onde o ToS é menos restritivo, mas não para LinkedIn Jobs ou LinkedIn Posts. Se for tentador "só rodar o Actor e ver", o Standard Actor Contract §2.1 é o lembrete explícito: "**It is your responsibility to ensure that your use of Actor Output complies with applicable laws and the third-party intellectual property rights**."
+**Implicação prática para o `job-radar`:** a existência de Actors de Apify **não** é razão para reverter a recomendação de §6.3. Pode-se, no máximo, considerar Apify para outras fontes (Indeed, Glassdoor, Adzuna-aggregator) onde o ToS é menos restritivo, mas não para LinkedIn Jobs ou LinkedIn Posts. Se for tentador "só rodar o Actor e ver", o Standard Actor Contract §2.1 é o lembrete explícito: "**It is your responsibility to ensure that your use of Actor Output complies with applicable laws and the third-party intellectual property rights**."
 
 ### 8.8. Fontes primárias consultadas (seção 8)
 
