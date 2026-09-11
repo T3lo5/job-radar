@@ -1,24 +1,24 @@
-import type { AIClient, AIMessage } from './types.js'
+import type { AIClient, AIMessage } from './types.js';
 
 export interface JobAnalysis {
-  score: number
-  nivel_aderencia: 'Muito alta' | 'Alta' | 'Média' | 'Baixa' | 'Muito baixa'
-  prioridade: 'alta' | 'media' | 'baixa'
-  pontos_fortes: string[]
-  requisitos_faltantes: string[]
-  riscos: string[]
-  modalidade: 'remoto' | 'hibrido' | 'presencial' | 'nao_informado'
-  senioridade: 'junior' | 'pleno' | 'senior' | 'lead' | 'manager' | 'nao_informado'
-  tecnologias_match: string[]
-  resumo_vaga: string
-  recomendacao: 'Candidatar' | 'Avaliar' | 'Ignorar'
+  score: number;
+  nivel_aderencia: 'Muito alta' | 'Alta' | 'Média' | 'Baixa' | 'Muito baixa';
+  prioridade: 'alta' | 'media' | 'baixa';
+  pontos_fortes: string[];
+  requisitos_faltantes: string[];
+  riscos: string[];
+  modalidade: 'remoto' | 'hibrido' | 'presencial' | 'nao_informado';
+  senioridade: 'junior' | 'pleno' | 'senior' | 'lead' | 'manager' | 'nao_informado';
+  tecnologias_match: string[];
+  resumo_vaga: string;
+  recomendacao: 'Candidatar' | 'Avaliar' | 'Ignorar';
 }
 
 export class JobAnalyzer {
-  private readonly ai: AIClient
+  private readonly ai: AIClient;
 
   constructor(ai: AIClient) {
-    this.ai = ai
+    this.ai = ai;
   }
 
   async analyze(
@@ -29,6 +29,7 @@ export class JobAnalyzer {
     jobTypes?: string[],
     focusStacks?: string[],
     discardTerms?: string[],
+    resumeText?: string,
   ): Promise<JobAnalysis> {
     const messages: AIMessage[] = [
       {
@@ -142,6 +143,12 @@ ${jobTypes?.map((j) => `* Vagas ${j}`).join('\n') ?? 'Não especificado'}
 * Júnior / Pleno compatível com experiência
 * Evitar vagas claramente Senior/Lead/Manager
 
+${
+  resumeText
+    ? `## CURRÍCULO DO CANDIDATO\n\n${resumeText.slice(0, 1500)}\n\nUse o currículo acima para entender melhor a experiência real do candidato e ajustar a análise.`
+    : ''
+}
+
 ---
 
 ## DADOS DA VAGA
@@ -158,14 +165,14 @@ ${discardTerms?.map((t) => `* ${t}`).join('\n') ?? 'Não especificado'}
 
 Se a vaga contiver algum destes termos no título, avalie com cuidado e considere reduzir o score significativamente.`,
       },
-    ]
+    ];
 
-    const response = await this.ai.chat(messages, { temperature: 0.3, maxTokens: 2000 })
+    const response = await this.ai.chat(messages, { temperature: 0.3, maxTokens: 2000 });
 
     try {
-      return JSON.parse(response.content) as JobAnalysis
+      return JSON.parse(response.content) as JobAnalysis;
     } catch {
-      throw new Error(`Failed to parse job analysis: ${response.content.slice(0, 200)}`)
+      throw new Error(`Failed to parse job analysis: ${response.content.slice(0, 200)}`);
     }
   }
 }

@@ -1,57 +1,75 @@
-import { useQuery } from '@tanstack/react-query'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
-import { matchApi, jobsApi } from '../services/api'
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
-import { DashboardSkeleton } from '../components/skeletons/dashboard-skeleton'
-import { EmptyState } from '../components/empty-state'
-import { ErrorBoundary } from '../components/error-boundary'
-import { CHART_COLORS } from '../lib/colors'
-import { Badge } from '../components/ui/badge'
-import { CheckCircle, AlertCircle, BarChart3 } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+} from 'recharts';
+import { matchApi, jobsApi } from '../services/api';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { DashboardSkeleton } from '../components/skeletons/dashboard-skeleton';
+import { EmptyState } from '../components/empty-state';
+import { ErrorBoundary } from '../components/error-boundary';
+import { CHART_COLORS } from '../lib/colors';
+import { Badge } from '../components/ui/badge';
+import { CheckCircle, AlertCircle, BarChart3 } from 'lucide-react';
 
 function DashboardContent() {
   const { data: jobsStats, isLoading: jobsStatsLoading } = useQuery({
     queryKey: ['jobs-stats'],
     queryFn: jobsApi.getStats,
     refetchInterval: 300_000,
-  })
+  });
 
   const { data: matchResults, isLoading: matchResultsLoading } = useQuery({
     queryKey: ['match-results'],
     queryFn: matchApi.getResults,
     refetchInterval: 300_000,
-  })
+  });
 
   const { data: recentJobs, isLoading: recentJobsLoading } = useQuery({
     queryKey: ['recent-jobs'],
     queryFn: () => jobsApi.getList({ limit: 10 }),
     refetchInterval: 300_000,
-  })
+  });
 
   if (jobsStatsLoading || matchResultsLoading || recentJobsLoading) {
-    return <DashboardSkeleton />
+    return <DashboardSkeleton />;
   }
 
-  const highMatchCount = matchResults?.filter((m) => m.score >= 80).length ?? 0
-  const mediumMatchCount = matchResults?.filter((m) => m.score >= 60 && m.score < 80).length ?? 0
+  const highMatchCount = matchResults?.filter((m) => m.score >= 80).length ?? 0;
+  const mediumMatchCount = matchResults?.filter((m) => m.score >= 60 && m.score < 80).length ?? 0;
 
   const distributionData = [
     { name: 'Excelente', value: matchResults?.filter((m) => m.score >= 90).length ?? 0 },
-    { name: 'Muito boa', value: matchResults?.filter((m) => m.score >= 80 && m.score < 90).length ?? 0 },
+    {
+      name: 'Muito boa',
+      value: matchResults?.filter((m) => m.score >= 80 && m.score < 90).length ?? 0,
+    },
     { name: 'Boa', value: matchResults?.filter((m) => m.score >= 70 && m.score < 80).length ?? 0 },
-    { name: 'Possível', value: matchResults?.filter((m) => m.score >= 60 && m.score < 70).length ?? 0 },
+    {
+      name: 'Possível',
+      value: matchResults?.filter((m) => m.score >= 60 && m.score < 70).length ?? 0,
+    },
     { name: 'Baixa', value: matchResults?.filter((m) => m.score < 60).length ?? 0 },
-  ].filter((d) => d.value > 0)
+  ].filter((d) => d.value > 0);
 
   const statusData = jobsStats?.byStatus
     ? Object.entries(jobsStats.byStatus).map(([name, value]) => ({ name, value: value as number }))
-    : []
+    : [];
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-display font-bold">Dashboard</h1>
-        <p className="text-sm text-muted-foreground mt-1">Visão geral das suas vagas e candidaturas</p>
+        <p className="text-sm text-muted-foreground mt-1">
+          Visão geral das suas vagas e candidaturas
+        </p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
@@ -99,7 +117,10 @@ function DashboardContent() {
                     label={({ name, value }) => `${name}: ${value}`}
                   >
                     {distributionData.map((_entry, index) => (
-                      <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={CHART_COLORS[index % CHART_COLORS.length]}
+                      />
                     ))}
                   </Pie>
                   <Tooltip />
@@ -153,19 +174,17 @@ function DashboardContent() {
                         <div className="text-sm text-muted-foreground">{match.job.company}</div>
                       </div>
                     </div>
-                     <div className="flex items-center gap-2">
-                       <Badge
-                         variant={
-                           match.score >= 80 ? 'success' :
-                           match.score >= 60 ? 'warning' :
-                           'error'
-                         }
-                       >
-                         {match.score}%
-                       </Badge>
-                     </div>
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        variant={
+                          match.score >= 80 ? 'success' : match.score >= 60 ? 'warning' : 'error'
+                        }
+                      >
+                        {match.score}%
+                      </Badge>
+                    </div>
                   </div>
-                )
+                );
               })}
             </div>
           ) : (
@@ -173,6 +192,8 @@ function DashboardContent() {
               icon={<BarChart3 className="h-12 w-12" />}
               title="Nenhuma vaga avaliada ainda"
               description="Colete vagas e avalie matches para ver os resultados aqui."
+              actionLabel="Ver vagas"
+              actionHref="/jobs"
             />
           )}
         </CardContent>
@@ -201,13 +222,15 @@ function DashboardContent() {
             <EmptyState
               title="Nenhuma vaga coletada ainda"
               description="Configure fontes de vagas em Configurações para começar."
+              actionLabel="Configurar fontes"
+              actionHref="/settings"
               className="py-8"
             />
           )}
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }
 
 export function DashboardPage() {
@@ -215,5 +238,5 @@ export function DashboardPage() {
     <ErrorBoundary onRetry={() => window.location.reload()}>
       <DashboardContent />
     </ErrorBoundary>
-  )
+  );
 }

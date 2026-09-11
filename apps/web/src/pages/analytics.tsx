@@ -1,30 +1,30 @@
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { analyticsApi } from '../services/api'
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
-import { Skeleton } from '../components/ui/skeleton'
-import { EmptyState } from '../components/empty-state'
-import { ErrorBoundary } from '../components/error-boundary'
-import { BarChart3 } from 'lucide-react'
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { analyticsApi } from '../services/api';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Skeleton } from '../components/ui/skeleton';
+import { EmptyState } from '../components/empty-state';
+import { ErrorBoundary } from '../components/error-boundary';
+import { BarChart3 } from 'lucide-react';
 
 const PERIODS = [
   { label: '7 dias', value: 7 },
   { label: '30 dias', value: 30 },
   { label: '90 dias', value: 90 },
-]
+];
 
 function AnalyticsContent() {
-  const [days, setDays] = useState(30)
+  const [days, setDays] = useState(30);
 
   const { data, isLoading } = useQuery({
     queryKey: ['analytics', days],
     queryFn: () => analyticsApi.getOverview(days),
-  })
+  });
 
   if (isLoading) {
     return (
-    <div className="space-y-4">
+      <div className="space-y-4">
         <div className="flex items-center justify-between">
           <Skeleton className="h-8 w-32" />
           <div className="flex gap-2">
@@ -56,7 +56,7 @@ function AnalyticsContent() {
           </Card>
         </div>
       </div>
-    )
+    );
   }
 
   return (
@@ -90,9 +90,7 @@ function AnalyticsContent() {
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <div className="text-2xl font-bold text-accent">
-              {data?.applications.applied ?? 0}
-            </div>
+            <div className="text-2xl font-bold text-accent">{data?.applications.applied ?? 0}</div>
             <p className="text-sm text-muted-foreground">Aplicadas</p>
           </CardContent>
         </Card>
@@ -106,9 +104,7 @@ function AnalyticsContent() {
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <div className="text-2xl font-bold text-warning">
-              {data?.applications.offers ?? 0}
-            </div>
+            <div className="text-2xl font-bold text-warning">{data?.applications.offers ?? 0}</div>
             <p className="text-sm text-muted-foreground">Ofertas</p>
           </CardContent>
         </Card>
@@ -135,6 +131,8 @@ function AnalyticsContent() {
                 icon={<BarChart3 className="h-10 w-10" />}
                 title="Sem dados de matches"
                 description="Avalie matches de vagas para ver a distribuição."
+                actionLabel="Avaliar matches"
+                actionHref="/jobs"
                 className="py-8"
               />
             )}
@@ -159,6 +157,8 @@ function AnalyticsContent() {
               <EmptyState
                 title="Sem dados de aplicações"
                 description="Comece aplicando para vagas."
+                actionLabel="Ver candidaturas"
+                actionHref="/applications"
                 className="py-8"
               />
             )}
@@ -186,6 +186,8 @@ function AnalyticsContent() {
               <EmptyState
                 title="Nenhuma skill encontrada"
                 description="Aplique a vagas para ver skills frequentes."
+                actionLabel="Ver vagas"
+                actionHref="/jobs"
                 className="py-8"
               />
             )}
@@ -210,6 +212,8 @@ function AnalyticsContent() {
               <EmptyState
                 title="Nenhum gap encontrado"
                 description="Seu perfil está completo!"
+                actionLabel="Ver perfil"
+                actionHref="/profile"
                 className="py-8"
               />
             )}
@@ -217,7 +221,7 @@ function AnalyticsContent() {
         </Card>
       </div>
     </div>
-  )
+  );
 }
 
 export function AnalyticsPage() {
@@ -225,5 +229,5 @@ export function AnalyticsPage() {
     <ErrorBoundary onRetry={() => window.location.reload()}>
       <AnalyticsContent />
     </ErrorBoundary>
-  )
+  );
 }

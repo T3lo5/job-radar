@@ -1,5 +1,5 @@
-import type { Prisma } from '../generated/prisma/index.js'
-import { prisma } from '../db/prisma.js'
+import type { Prisma } from '../generated/prisma/index.js';
+import { prisma } from '../db/prisma.js';
 
 export type ApplicationStatus =
   | 'FOUND'
@@ -9,68 +9,69 @@ export type ApplicationStatus =
   | 'INTERVIEW'
   | 'REJECTED'
   | 'OFFER'
-  | 'ARCHIVED'
+  | 'ARCHIVED';
 
 export interface ApplicationWithJob {
-  id: string
-  jobId: string
-  profileId: string
-  status: ApplicationStatus
-  notes: string | null
-  salary: number | null
-  result: string | null
-  contacts: Record<string, unknown> | null
-  appliedAt: Date | null
-  createdAt: Date
-  updatedAt: Date
+  id: string;
+  jobId: string;
+  profileId: string;
+  status: ApplicationStatus;
+  notes: string | null;
+  salary: number | null;
+  result: string | null;
+  contacts: Record<string, unknown> | null;
+  appliedAt: Date | null;
+  followUpAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
   job: {
-    id: string
-    title: string | null
-    company: string | null
-    description: string | null
-    location: string | null
-    remote: string | null
-    url: string | null
-  }
+    id: string;
+    title: string | null;
+    company: string | null;
+    description: string | null;
+    location: string | null;
+    remote: string | null;
+    url: string | null;
+  };
 }
 
 export interface ListApplicationsResult {
-  data: ApplicationWithJob[]
+  data: ApplicationWithJob[];
   pagination: {
-    page: number
-    limit: number
-    total: number
-    totalPages: number
-  }
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
 }
 
 export interface CreateApplicationResult {
-  applicationId: string
-  eventId: string
+  applicationId: string;
+  eventId: string;
 }
 
 export interface StatusTransitionResult {
-  application: unknown
-  event: unknown
+  application: unknown;
+  event: unknown;
 }
 
 export class ApplicationService {
   async list(query: {
-    page: number
-    limit: number
-    status?: ApplicationStatus
-    jobId?: string
+    page: number;
+    limit: number;
+    status?: ApplicationStatus;
+    jobId?: string;
   }): Promise<ListApplicationsResult> {
-    const { page, limit, status, jobId } = query
+    const { page, limit, status, jobId } = query;
 
-    const profile = await prisma.profile.findFirst()
+    const profile = await prisma.profile.findFirst();
     if (!profile) {
-      return { data: [], pagination: { page, limit, total: 0, totalPages: 0 } }
+      return { data: [], pagination: { page, limit, total: 0, totalPages: 0 } };
     }
 
-    const where: Record<string, unknown> = { profileId: profile.id }
-    if (status) where.status = status
-    if (jobId) where.jobId = jobId
+    const where: Record<string, unknown> = { profileId: profile.id };
+    if (status) where.status = status;
+    if (jobId) where.jobId = jobId;
 
     const [applications, total] = await Promise.all([
       prisma.application.findMany({
@@ -93,7 +94,7 @@ export class ApplicationService {
         take: limit,
       }),
       prisma.application.count({ where }),
-    ])
+    ]);
 
     return {
       data: applications as ApplicationWithJob[],
@@ -103,7 +104,7 @@ export class ApplicationService {
         total,
         totalPages: Math.ceil(total / limit),
       },
-    }
+    };
   }
 
   async getById(id: string) {
@@ -113,25 +114,25 @@ export class ApplicationService {
         job: true,
         events: { orderBy: { createdAt: 'asc' } },
       },
-    })
+    });
   }
 
   async create(input: {
-    jobId: string
-    notes?: string
+    jobId: string;
+    notes?: string;
   }): Promise<CreateApplicationResult | { conflict: true; applicationId: string } | null> {
-    const profile = await prisma.profile.findFirst()
-    if (!profile) return null
+    const profile = await prisma.profile.findFirst();
+    if (!profile) return null;
 
-    const job = await prisma.job.findUnique({ where: { id: input.jobId } })
-    if (!job) return null
+    const job = await prisma.job.findUnique({ where: { id: input.jobId } });
+    if (!job) return null;
 
     const existing = await prisma.application.findUnique({
       where: { jobId_profileId: { jobId: input.jobId, profileId: profile.id } },
-    })
+    });
 
     if (existing) {
-      return { conflict: true, applicationId: existing.id }
+      return { conflict: true, applicationId: existing.id };
     }
 
     const application = await prisma.application.create({
@@ -141,7 +142,7 @@ export class ApplicationService {
         status: 'INTERESTING',
         notes: input.notes,
       },
-    })
+    });
 
     await prisma.applicationEvent.create({
       data: {
@@ -150,9 +151,9 @@ export class ApplicationService {
         toStatus: 'INTERESTING',
         note: 'Marked as interesting',
       },
-    })
+    });
 
-    return { applicationId: application.id, eventId: '' }
+    return { applicationId: application.id, eventId: '' };
   }
 
   async updateStatus(
@@ -160,10 +161,10 @@ export class ApplicationService {
     status: ApplicationStatus,
     note?: string,
   ): Promise<StatusTransitionResult | null> {
-    const application = await prisma.application.findUnique({ where: { id } })
-    if (!application) return null
+    const application = await prisma.application.findUnique({ where: { id } });
+    if (!application) return null;
 
-    const fromStatus = application.status
+    const fromStatus = application.status;
 
     const [updated, event] = await prisma.$transaction([
       prisma.application.update({
@@ -181,22 +182,23 @@ export class ApplicationService {
           note,
         },
       }),
-    ])
+    ]);
 
-    return { application: updated, event }
+    return { application: updated, event };
   }
 
   async update(
     id: string,
     data: {
-      notes?: string
-      salary?: number | null
-      result?: string
-      contacts?: Record<string, unknown>
+      notes?: string;
+      salary?: number | null;
+      result?: string;
+      contacts?: Record<string, unknown>;
+      followUpAt?: Date | null;
     },
   ) {
-    const application = await prisma.application.findUnique({ where: { id } })
-    if (!application) return null
+    const application = await prisma.application.findUnique({ where: { id } });
+    if (!application) return null;
 
     return prisma.application.update({
       where: { id },
@@ -205,17 +207,30 @@ export class ApplicationService {
         salary: data.salary,
         result: data.result,
         contacts: data.contacts as Prisma.InputJsonValue,
+        followUpAt: data.followUpAt,
       },
-    })
+    });
+  }
+
+  async updateFollowUp(id: string, followUpAt: string | null) {
+    const application = await prisma.application.findUnique({ where: { id } });
+    if (!application) return null;
+
+    return prisma.application.update({
+      where: { id },
+      data: {
+        followUpAt: followUpAt ? new Date(followUpAt) : null,
+      },
+    });
   }
 
   async delete(id: string) {
-    const application = await prisma.application.findUnique({ where: { id } })
-    if (!application) return false
+    const application = await prisma.application.findUnique({ where: { id } });
+    if (!application) return false;
 
-    await prisma.application.delete({ where: { id } })
-    return true
+    await prisma.application.delete({ where: { id } });
+    return true;
   }
 }
 
-export const applicationService = new ApplicationService()
+export const applicationService = new ApplicationService();

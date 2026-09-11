@@ -1,40 +1,41 @@
-import { useParams, Link, useNavigate } from 'react-router-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { jobsApi, matchApi, cvApi } from '../services/api'
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
-import { Button } from '../components/ui/button'
-import { Skeleton } from '../components/ui/skeleton'
-import { EmptyState } from '../components/empty-state'
-import { ErrorBoundary } from '../components/error-boundary'
-import { toast } from '../components/ui/toast'
-import { matchLabelFor, MATCH_LABELS, REMOTE_MODE_LABELS } from '@job-radar/shared'
-import { ExternalLink, FileText, Download, Loader2 } from 'lucide-react'
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { jobsApi, matchApi, cvApi } from '../services/api';
+import { sanitizeHtml } from '../lib/sanitize';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Button } from '../components/ui/button';
+import { Skeleton } from '../components/ui/skeleton';
+import { EmptyState } from '../components/empty-state';
+import { ErrorBoundary } from '../components/error-boundary';
+import { toast } from '../components/ui/toast';
+import { matchLabelFor, MATCH_LABELS, REMOTE_MODE_LABELS } from '@job-radar/shared';
+import { ExternalLink, FileText, Download, Loader2 } from 'lucide-react';
 
 function JobDetailContent() {
-  const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
-  const queryClient = useQueryClient()
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const { data: job, isLoading: jobLoading } = useQuery({
     queryKey: ['job', id],
     queryFn: () => jobsApi.getById(id!),
     enabled: !!id,
-  })
+  });
 
   const { data: matchResult } = useQuery({
     queryKey: ['match-result', id],
     queryFn: () => matchApi.getResults().then((r) => r.find((m) => m.job.id === id)),
     enabled: !!id,
-  })
+  });
 
   const evaluateMutation = useMutation({
     mutationFn: () => matchApi.evaluate(id!),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['match-result', id] })
-      toast.success('Match avaliado com sucesso')
+      queryClient.invalidateQueries({ queryKey: ['match-result', id] });
+      toast.success('Match avaliado com sucesso');
     },
     onError: () => toast.error('Erro ao avaliar match'),
-  })
+  });
 
   const optimizeCvMutation = useMutation({
     mutationFn: () =>
@@ -42,12 +43,12 @@ function JobDetailContent() {
         jobId: id,
       }),
     onSuccess: (data) => {
-      toast.success('CV otimizado com sucesso!')
+      toast.success('CV otimizado com sucesso!');
       // In a real app, you'd navigate to a preview page or open a modal
-      console.log('Optimized CV:', data)
+      console.log('Optimized CV:', data);
     },
     onError: () => toast.error('Erro ao otimizar CV'),
-  })
+  });
 
   const exportPdfMutation = useMutation({
     mutationFn: () =>
@@ -57,7 +58,7 @@ function JobDetailContent() {
         optimizedText: optimizeCvMutation.data?.optimizedText,
       }),
     onError: () => toast.error('Erro ao gerar PDF'),
-  })
+  });
 
   if (jobLoading) {
     return (
@@ -76,7 +77,7 @@ function JobDetailContent() {
           </CardContent>
         </Card>
       </div>
-    )
+    );
   }
 
   if (!job) {
@@ -86,10 +87,10 @@ function JobDetailContent() {
         description="A vaga que você está procurando não existe ou foi removida."
         action={<Button onClick={() => navigate('/jobs')}>Ver todas as vagas</Button>}
       />
-    )
+    );
   }
 
-  const match = matchResult?.job.id === id ? matchResult : null
+  const match = matchResult?.job.id === id ? matchResult : null;
 
   return (
     <div className="space-y-6">
@@ -106,10 +107,13 @@ function JobDetailContent() {
               <p className="text-lg text-muted-foreground">{job.company}</p>
               <div className="mt-2 flex flex-wrap gap-2 text-sm">
                 {job.location && (
-                  <span className="rounded bg-surface-2 px-2 py-0.5 text-xs text-muted-foreground">{job.location}</span>
+                  <span className="rounded bg-surface-2 px-2 py-0.5 text-xs text-muted-foreground">
+                    {job.location}
+                  </span>
                 )}
                 <span className="rounded bg-surface-2 px-2 py-0.5 text-xs text-muted-foreground">
-                  {REMOTE_MODE_LABELS[job.remote?.toLowerCase() as keyof typeof REMOTE_MODE_LABELS]?.label ?? job.remote}
+                  {REMOTE_MODE_LABELS[job.remote?.toLowerCase() as keyof typeof REMOTE_MODE_LABELS]
+                    ?.label ?? job.remote}
                 </span>
                 {job.salaryMin && job.salaryMax && (
                   <span className="rounded bg-surface-2 px-2 py-0.5 text-xs text-muted-foreground">
@@ -159,9 +163,7 @@ function JobDetailContent() {
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
-              <p className="text-muted-foreground">
-                Esta vaga ainda não foi avaliada.
-              </p>
+              <p className="text-muted-foreground">Esta vaga ainda não foi avaliada.</p>
               <Button
                 onClick={() => evaluateMutation.mutate()}
                 disabled={evaluateMutation.isPending}
@@ -179,7 +181,10 @@ function JobDetailContent() {
           <CardTitle>Descrição</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="whitespace-pre-wrap text-sm">{job.description}</div>
+          <div
+            className="whitespace-pre-wrap text-sm"
+            dangerouslySetInnerHTML={{ __html: sanitizeHtml(job.description) }}
+          />
         </CardContent>
       </Card>
 
@@ -230,7 +235,7 @@ function JobDetailContent() {
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }
 
 export function JobDetailPage() {
@@ -238,5 +243,5 @@ export function JobDetailPage() {
     <ErrorBoundary onRetry={() => window.location.reload()}>
       <JobDetailContent />
     </ErrorBoundary>
-  )
+  );
 }

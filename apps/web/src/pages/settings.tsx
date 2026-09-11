@@ -1,198 +1,203 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { z } from 'zod'
-import { useState } from 'react'
-import { Info, Bot, Globe, Clock, Key, ExternalLink } from 'lucide-react'
-import { aiProvidersApi, setupApi, settingsApi, adminApi, type AiProvider } from '../services/api'
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
-import { Button } from '../components/ui/button'
-import { Input } from '../components/ui/input'
-import { Badge } from '../components/ui/badge'
-import { Skeleton } from '../components/ui/skeleton'
-import { EmptyState } from '../components/empty-state'
-import { ErrorBoundary } from '../components/error-boundary'
-import { toast } from '../components/ui/toast'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { useState } from 'react';
+import { Info, Bot, Globe, Clock, Key, ExternalLink } from 'lucide-react';
+import { aiProvidersApi, setupApi, settingsApi, adminApi, type AiProvider } from '../services/api';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Badge } from '../components/ui/badge';
+import { Skeleton } from '../components/ui/skeleton';
+import { EmptyState } from '../components/empty-state';
+import { ErrorBoundary } from '../components/error-boundary';
+import { toast } from '../components/ui/toast';
+import { SourceCard } from '../components/SourceCard';
 
 const cronSchema = z.object({
   jobCollectionCron: z.string().min(1),
   dailyReportCron: z.string().min(1),
-})
+});
 
-type CronFormData = z.infer<typeof cronSchema>
+type CronFormData = z.infer<typeof cronSchema>;
 
 export function SettingsPage() {
   return (
     <ErrorBoundary onRetry={() => window.location.reload()}>
       <SettingsPageContent />
     </ErrorBoundary>
-  )
+  );
 }
 
 function SettingsPageContent() {
-  const [activeTab, setActiveTab] = useState<'ai' | 'sources' | 'cron'>('ai')
-  const [editingProvider, setEditingProvider] = useState<AiProvider | null>(null)
-  const [isCreating, setIsCreating] = useState(false)
+  const [activeTab, setActiveTab] = useState<'ai' | 'sources' | 'cron'>('ai');
+  const [editingProvider, setEditingProvider] = useState<AiProvider | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     baseUrl: '',
     apiKey: '',
     model: '',
-  })
-  const [testResults, setTestResults] = useState<Record<string, { ok: boolean; error?: string }>>({})
-   const [formTestResult, setFormTestResult] = useState<{ ok: boolean; error?: string } | null>(null)
-  const [apifyToken, setApifyToken] = useState('')
-  const [isSavingApify, setIsSavingApify] = useState(false)
-  const [adzunaAppId, setAdzunaAppId] = useState('')
-  const [adzunaAppKey, setAdzunaAppKey] = useState('')
-  const [isSavingAdzuna, setIsSavingAdzuna] = useState(false)
-  const queryClient = useQueryClient()
+  });
+  const [testResults, setTestResults] = useState<Record<string, { ok: boolean; error?: string }>>(
+    {},
+  );
+  const [formTestResult, setFormTestResult] = useState<{ ok: boolean; error?: string } | null>(
+    null,
+  );
+  const [apifyToken, setApifyToken] = useState('');
+  const [isSavingApify, setIsSavingApify] = useState(false);
+  const [adzunaAppId, setAdzunaAppId] = useState('');
+  const [adzunaAppKey, setAdzunaAppKey] = useState('');
+  const [isSavingAdzuna, setIsSavingAdzuna] = useState(false);
+  const queryClient = useQueryClient();
 
   const { data: providersData, isLoading: isLoadingProviders } = useQuery({
     queryKey: ['aiProviders'],
     queryFn: () => aiProvidersApi.list(),
-  })
+  });
 
   const { data: apifyTokenStatus, refetch: refetchApifyToken } = useQuery({
     queryKey: ['apifyToken'],
     queryFn: () => adminApi.apifyToken.status(),
-  })
+  });
 
   const { data: adzunaCredentialsStatus, refetch: refetchAdzunaCredentials } = useQuery({
     queryKey: ['adzunaCredentials'],
     queryFn: () => adminApi.adzunaCredentials.status(),
-  })
+  });
 
   const { data: cronSettings } = useQuery({
     queryKey: ['settings', 'cron'],
     queryFn: () => settingsApi.getScope('cron'),
-  })
+  });
 
   const { data: sourcesData, isLoading: isLoadingSources } = useQuery({
     queryKey: ['admin', 'sources'],
     queryFn: () => adminApi.getSources(),
-  })
+  });
 
-  const providers = providersData?.providers ?? []
-  const sources = sourcesData?.sources ?? []
+  const providers = providersData?.providers ?? [];
+  const sources = sourcesData?.sources ?? [];
 
   const createMutation = useMutation({
     mutationFn: (data: typeof formData) =>
       aiProvidersApi.create({ ...data, isActive: providers.length === 0 }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['aiProviders'] })
-      setIsCreating(false)
-      resetForm()
-      toast.success('Provedor criado com sucesso')
+      queryClient.invalidateQueries({ queryKey: ['aiProviders'] });
+      setIsCreating(false);
+      resetForm();
+      toast.success('Provedor criado com sucesso');
     },
     onError: () => toast.error('Erro ao criar provedor'),
-  })
+  });
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<typeof formData> }) =>
       aiProvidersApi.update(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['aiProviders'] })
-      setEditingProvider(null)
-      resetForm()
-      toast.success('Provedor atualizado')
+      queryClient.invalidateQueries({ queryKey: ['aiProviders'] });
+      setEditingProvider(null);
+      resetForm();
+      toast.success('Provedor atualizado');
     },
     onError: () => toast.error('Erro ao atualizar provedor'),
-  })
+  });
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => aiProvidersApi.delete(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['aiProviders'] })
-      toast.success('Provedor excluído')
+      queryClient.invalidateQueries({ queryKey: ['aiProviders'] });
+      toast.success('Provedor excluído');
     },
     onError: () => toast.error('Erro ao excluir provedor'),
-  })
+  });
 
   const setActiveMutation = useMutation({
     mutationFn: (id: string) => aiProvidersApi.setActive(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['aiProviders'] })
-      toast.success('Provedor ativado')
+      queryClient.invalidateQueries({ queryKey: ['aiProviders'] });
+      toast.success('Provedor ativado');
     },
     onError: () => toast.error('Erro ao ativar provedor'),
-  })
+  });
 
   const testSavedMutation = useMutation({
     mutationFn: (id: string) => aiProvidersApi.test(id),
     onSuccess: (result, id) => {
-      setTestResults((prev) => ({ ...prev, [id]: result }))
+      setTestResults((prev) => ({ ...prev, [id]: result }));
     },
     onError: (error: any, id) => {
-      setTestResults((prev) => ({ ...prev, [id]: { ok: false, error: error.message } }))
+      setTestResults((prev) => ({ ...prev, [id]: { ok: false, error: error.message } }));
     },
-  })
+  });
 
   const testMutation = useMutation({
     mutationFn: (data: { baseUrl: string; apiKey: string; model: string }) =>
       setupApi.testConnection(data),
     onSuccess: (result) => {
-      setFormTestResult(result)
+      setFormTestResult(result);
     },
     onError: (error: any) => {
-      setFormTestResult({ ok: false, error: error.message })
+      setFormTestResult({ ok: false, error: error.message });
     },
-  })
+  });
 
   const saveApifyTokenMutation = useMutation({
     mutationFn: (token: string) => adminApi.apifyToken.save(token),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['apifyToken'] })
-      refetchApifyToken()
-      setApifyToken('')
-      setIsSavingApify(false)
-      toast.success('Token do Apify salvo com sucesso')
+      queryClient.invalidateQueries({ queryKey: ['apifyToken'] });
+      refetchApifyToken();
+      setApifyToken('');
+      setIsSavingApify(false);
+      toast.success('Token do Apify salvo com sucesso');
     },
     onError: () => {
-      setIsSavingApify(false)
-      toast.error('Erro ao salvar token do Apify')
+      setIsSavingApify(false);
+      toast.error('Erro ao salvar token do Apify');
     },
-  })
+  });
 
   const removeApifyTokenMutation = useMutation({
     mutationFn: () => adminApi.apifyToken.remove(),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['apifyToken'] })
-      refetchApifyToken()
-      toast.success('Token do Apify removido')
+      queryClient.invalidateQueries({ queryKey: ['apifyToken'] });
+      refetchApifyToken();
+      toast.success('Token do Apify removido');
     },
     onError: () => {
-      toast.error('Erro ao remover token do Apify')
+      toast.error('Erro ao remover token do Apify');
     },
-  })
+  });
 
   const saveAdzunaCredentialsMutation = useMutation({
     mutationFn: (data: { appId: string; appKey: string }) => adminApi.adzunaCredentials.save(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['adzunaCredentials'] })
-      refetchAdzunaCredentials()
-      setAdzunaAppId('')
-      setAdzunaAppKey('')
-      setIsSavingAdzuna(false)
-      toast.success('Credenciais da Adzuna salvas com sucesso')
+      queryClient.invalidateQueries({ queryKey: ['adzunaCredentials'] });
+      refetchAdzunaCredentials();
+      setAdzunaAppId('');
+      setAdzunaAppKey('');
+      setIsSavingAdzuna(false);
+      toast.success('Credenciais da Adzuna salvas com sucesso');
     },
     onError: () => {
-      setIsSavingAdzuna(false)
-      toast.error('Erro ao salvar credenciais da Adzuna')
+      setIsSavingAdzuna(false);
+      toast.error('Erro ao salvar credenciais da Adzuna');
     },
-  })
+  });
 
   const removeAdzunaCredentialsMutation = useMutation({
     mutationFn: () => adminApi.adzunaCredentials.remove(),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['adzunaCredentials'] })
-      refetchAdzunaCredentials()
-      toast.success('Credenciais da Adzuna removidas')
+      queryClient.invalidateQueries({ queryKey: ['adzunaCredentials'] });
+      refetchAdzunaCredentials();
+      toast.success('Credenciais da Adzuna removidas');
     },
     onError: () => {
-      toast.error('Erro ao remover credenciais da Adzuna')
+      toast.error('Erro ao remover credenciais da Adzuna');
     },
-  })
+  });
 
   const cronForm = useForm<CronFormData>({
     resolver: zodResolver(cronSchema),
@@ -200,75 +205,75 @@ function SettingsPageContent() {
       jobCollectionCron: cronSettings?.settings.jobCollectionCron ?? '0 6 * * *',
       dailyReportCron: cronSettings?.settings.dailyReportCron ?? '5 18 * * *',
     },
-  })
+  });
 
   const saveCron = useMutation({
     mutationFn: (data: CronFormData) => setupApi.saveCron(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['settings'] })
-      toast.success('Agendamento salvo com sucesso')
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
+      toast.success('Agendamento salvo com sucesso');
     },
     onError: () => toast.error('Erro ao salvar agendamento'),
-  })
+  });
 
   const toggleSourceMutation = useMutation({
     mutationFn: ({ sourceId, enabled }: { sourceId: string; enabled: boolean }) =>
       adminApi.toggleSource(sourceId, enabled),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin', 'sources'] })
+      queryClient.invalidateQueries({ queryKey: ['admin', 'sources'] });
     },
-  })
+  });
 
   const collectNowMutation = useMutation({
     mutationFn: () => adminApi.collectNow(),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['jobs'] })
-      toast.success('Coleta iniciada com sucesso')
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
+      toast.success('Coleta iniciada com sucesso');
     },
     onError: () => toast.error('Erro na coleta'),
-  })
+  });
 
   const processAllMutation = useMutation({
     mutationFn: () => adminApi.processAll(),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['analytics'] })
-      queryClient.invalidateQueries({ queryKey: ['jobs'] })
-      toast.success('Processamento iniciado')
+      queryClient.invalidateQueries({ queryKey: ['analytics'] });
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
+      toast.success('Processamento iniciado');
     },
     onError: () => toast.error('Erro no processamento'),
-  })
+  });
 
   function resetForm() {
-    setFormData({ name: '', baseUrl: '', apiKey: '', model: '' })
-    setFormTestResult(null)
+    setFormData({ name: '', baseUrl: '', apiKey: '', model: '' });
+    setFormTestResult(null);
   }
 
   function startEdit(provider: AiProvider) {
-    setEditingProvider(provider)
+    setEditingProvider(provider);
     setFormData({
       name: provider.name,
       baseUrl: provider.baseUrl,
       apiKey: '',
       model: provider.model,
-    })
-    setIsCreating(false)
-    setFormTestResult(null)
+    });
+    setIsCreating(false);
+    setFormTestResult(null);
   }
 
   function startCreate() {
-    setIsCreating(true)
-    setEditingProvider(null)
-    resetForm()
+    setIsCreating(true);
+    setEditingProvider(null);
+    resetForm();
   }
 
   function cancelEdit() {
-    setEditingProvider(null)
-    setIsCreating(false)
-    resetForm()
+    setEditingProvider(null);
+    setIsCreating(false);
+    resetForm();
   }
 
   function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
+    e.preventDefault();
     if (editingProvider) {
       updateMutation.mutate({
         id: editingProvider.id,
@@ -276,45 +281,48 @@ function SettingsPageContent() {
           ...formData,
           ...(formData.apiKey ? { apiKey: formData.apiKey } : {}),
         },
-      })
+      });
     } else {
-      createMutation.mutate(formData)
+      createMutation.mutate(formData);
     }
   }
 
   function handleTest(e: React.FormEvent) {
-    e.preventDefault()
-    setFormTestResult(null)
-    testMutation.mutate(formData)
+    e.preventDefault();
+    setFormTestResult(null);
+    testMutation.mutate(formData);
   }
 
   function handleApifyTokenSubmit() {
-    if (!apifyToken.trim()) return
-    setIsSavingApify(true)
-    saveApifyTokenMutation.mutate(apifyToken.trim())
+    if (!apifyToken.trim()) return;
+    setIsSavingApify(true);
+    saveApifyTokenMutation.mutate(apifyToken.trim());
   }
 
   function handleRemoveApifyToken() {
-    removeApifyTokenMutation.mutate()
+    removeApifyTokenMutation.mutate();
   }
 
   function handleAdzunaCredentialsSubmit() {
-    if (!adzunaAppId.trim() || !adzunaAppKey.trim()) return
-    setIsSavingAdzuna(true)
-    saveAdzunaCredentialsMutation.mutate({ appId: adzunaAppId.trim(), appKey: adzunaAppKey.trim() })
+    if (!adzunaAppId.trim() || !adzunaAppKey.trim()) return;
+    setIsSavingAdzuna(true);
+    saveAdzunaCredentialsMutation.mutate({
+      appId: adzunaAppId.trim(),
+      appKey: adzunaAppKey.trim(),
+    });
   }
 
   function handleRemoveAdzunaCredentials() {
-    removeAdzunaCredentialsMutation.mutate()
+    removeAdzunaCredentialsMutation.mutate();
   }
 
-  const isPending = createMutation.isPending || updateMutation.isPending
+  const isPending = createMutation.isPending || updateMutation.isPending;
 
   const tabs = [
     { id: 'ai', label: 'IA', icon: Bot },
     { id: 'sources', label: 'Fontes', icon: Globe },
     { id: 'cron', label: 'Cron', icon: Clock },
-  ] as const
+  ] as const;
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -322,7 +330,7 @@ function SettingsPageContent() {
 
       <div className="flex gap-2 mb-6">
         {tabs.map((tab) => {
-          const Icon = tab.icon
+          const Icon = tab.icon;
           return (
             <Button
               key={tab.id}
@@ -333,7 +341,7 @@ function SettingsPageContent() {
               <Icon className="h-4 w-4 mr-1" />
               {tab.label}
             </Button>
-          )
+          );
         })}
       </div>
 
@@ -379,9 +387,11 @@ function SettingsPageContent() {
                         <div>
                           <div className="font-medium flex items-center gap-2">
                             {provider.name}
-                             {provider.isActive && (
-                              <Badge variant="success" className="text-xs">Ativo</Badge>
-                             )}
+                            {provider.isActive && (
+                              <Badge variant="success" className="text-xs">
+                                Ativo
+                              </Badge>
+                            )}
                           </div>
                           <div className="text-sm text-muted-foreground">
                             {provider.model} — {provider.baseUrl}
@@ -406,11 +416,7 @@ function SettingsPageContent() {
                               Ativar
                             </Button>
                           )}
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => startEdit(provider)}
-                          >
+                          <Button size="sm" variant="outline" onClick={() => startEdit(provider)}>
                             Editar
                           </Button>
                           <Button
@@ -424,8 +430,12 @@ function SettingsPageContent() {
                         </div>
                       </div>
                       {testResults[provider.id] && (
-                        <div className={`mt-2 text-sm ${testResults[provider.id].ok ? 'text-success' : 'text-error'}`}>
-                          {testResults[provider.id].ok ? '✓ Conexão OK' : `✗ Erro: ${testResults[provider.id].error}`}
+                        <div
+                          className={`mt-2 text-sm ${testResults[provider.id].ok ? 'text-success' : 'text-error'}`}
+                        >
+                          {testResults[provider.id].ok
+                            ? '✓ Conexão OK'
+                            : `✗ Erro: ${testResults[provider.id].error}`}
                         </div>
                       )}
                     </div>
@@ -433,7 +443,10 @@ function SettingsPageContent() {
                 </div>
 
                 {(isCreating || editingProvider) && (
-                  <form onSubmit={handleSubmit} className="space-y-4 border-t border-slate-700 pt-4">
+                  <form
+                    onSubmit={handleSubmit}
+                    className="space-y-4 border-t border-slate-700 pt-4"
+                  >
                     <h3 className="font-medium">
                       {editingProvider ? 'Editar Provedor' : 'Novo Provedor'}
                     </h3>
@@ -460,7 +473,10 @@ function SettingsPageContent() {
                     </div>
                     <div>
                       <label className="text-sm font-medium">
-                        API Key {editingProvider && <span className="text-muted-foreground">(deixe vazio para manter)</span>}
+                        API Key{' '}
+                        {editingProvider && (
+                          <span className="text-muted-foreground">(deixe vazio para manter)</span>
+                        )}
                       </label>
                       <Input
                         type="password"
@@ -490,7 +506,12 @@ function SettingsPageContent() {
                         type="button"
                         variant="outline"
                         onClick={handleTest}
-                        disabled={testMutation.isPending || !formData.baseUrl || !formData.apiKey || !formData.model}
+                        disabled={
+                          testMutation.isPending ||
+                          !formData.baseUrl ||
+                          !formData.apiKey ||
+                          !formData.model
+                        }
                       >
                         {testMutation.isPending ? 'Testando...' : 'Testar Conexão'}
                       </Button>
@@ -499,7 +520,9 @@ function SettingsPageContent() {
                       </Button>
                     </div>
                     {formTestResult && (
-                      <div className={`text-sm ${formTestResult.ok ? 'text-success' : 'text-error'}`}>
+                      <div
+                        className={`text-sm ${formTestResult.ok ? 'text-success' : 'text-error'}`}
+                      >
                         {formTestResult.ok ? '✓ Conexão OK' : `✗ Erro: ${formTestResult.error}`}
                       </div>
                     )}
@@ -539,7 +562,10 @@ function SettingsPageContent() {
             {isLoadingSources ? (
               <div className="space-y-3">
                 {Array.from({ length: 4 }).map((_, i) => (
-                  <div key={i} className="flex items-center justify-between p-4 rounded-[var(--radius-md)] bg-surface-2 border border-border">
+                  <div
+                    key={i}
+                    className="flex items-center justify-between p-4 rounded-[var(--radius-md)] bg-surface-2 border border-border"
+                  >
                     <div className="space-y-1">
                       <Skeleton className="h-4 w-24" />
                       <Skeleton className="h-3 w-16" />
@@ -552,62 +578,25 @@ function SettingsPageContent() {
               <EmptyState
                 title="Nenhuma fonte encontrada"
                 description="Configure fontes de vagas no backend."
+                actionLabel="Ver documentação"
+                actionHref="https://github.com/T3lo5/job-radar/blob/main/README.md#como-adicionar-uma-nova-fonte-de-vaga"
                 className="py-8"
               />
             ) : (
               <>
-                <p className="text-sm text-muted-foreground mb-4">
-                  Ative ou desative as fontes de vagas. Use &quot;Buscar Agora&quot; para uma busca manual imediata.
-                </p>
-                {collectNowMutation.isSuccess && (
-                  <div className="mb-4 p-3 rounded bg-success/10 border border-success text-success text-sm">
-                    ✓ Coleta concluída: {collectNowMutation.data?.collected ?? 0} vagas encontradas
-                  </div>
-                )}
-                {collectNowMutation.isError && (
-                  <div className="mb-4 p-3 rounded bg-error/10 border border-error text-error text-sm">
-                    ✗ Erro na coleta. Tente novamente.
-                  </div>
-                )}
-                {processAllMutation.isSuccess && (
-                  <div className="mb-4 p-3 rounded bg-success/10 border border-success text-success text-sm">
-                    ✓ {processAllMutation.data?.message ?? 'Processamento iniciado'}
-                  </div>
-                )}
-                {processAllMutation.isError && (
-                  <div className="mb-4 p-3 rounded bg-error/10 border border-error text-error text-sm">
-                    ✗ Erro no processamento. Tente novamente.
-                  </div>
-                )}
-                <div className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                   {sources.map((source) => (
-                    <div
+                    <SourceCard
                       key={source.id}
-                      className="flex items-center justify-between p-4 rounded-lg bg-surface-2 border border-border"
-                    >
-                      <div>
-                        <div className="font-medium text-foreground">{source.name}</div>
-                        <div className="text-sm text-muted-foreground">
-                          {source.description}
-                        </div>
-                        <div className="text-sm text-muted-foreground mt-1">
-                          {source.enabled ? 'Ativo' : 'Desativado'}
-                        </div>
-                      </div>
-                      <Button
-                        size="sm"
-                        variant={source.enabled ? 'secondary' : 'outline'}
-                        onClick={() =>
-                          toggleSourceMutation.mutate({
-                            sourceId: source.id,
-                            enabled: !source.enabled,
-                          })
-                        }
-                        disabled={toggleSourceMutation.isPending}
-                      >
-                        {source.enabled ? 'Desativar' : 'Ativar'}
-                      </Button>
-                    </div>
+                      source={source}
+                      onToggle={(enabled) =>
+                        toggleSourceMutation.mutate({
+                          sourceId: source.id,
+                          enabled,
+                        })
+                      }
+                      isToggling={toggleSourceMutation.isPending}
+                    />
                   ))}
                 </div>
               </>
@@ -622,7 +611,10 @@ function SettingsPageContent() {
                 <p className="text-sm text-muted-foreground mb-4">
                   Fonte de vagas do LinkedIn usando o Apify. Configure seu token API grátis em{' '}
                   <a
-                    href={apifyTokenStatus?.links?.console || 'https://console.apify.com/account#/integrations/api-token'}
+                    href={
+                      apifyTokenStatus?.links?.console ||
+                      'https://console.apify.com/account#/integrations/api-token'
+                    }
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-accent hover:text-accent/80 underline inline-flex items-center gap-1"
@@ -645,7 +637,9 @@ function SettingsPageContent() {
                 {apifyTokenStatus.configured && !apifyTokenStatus.fromEnv && (
                   <div className="mb-4 p-3 bg-success/10 border border-success text-success text-sm rounded-lg flex items-center gap-2">
                     <span className="text-success font-medium">✓ Token configurado</span>
-                    <span className="text-muted-foreground">via banco de dados (criptografado)</span>
+                    <span className="text-muted-foreground">
+                      via banco de dados (criptografado)
+                    </span>
                   </div>
                 )}
 
@@ -694,7 +688,11 @@ function SettingsPageContent() {
                       onClick={handleApifyTokenSubmit}
                       disabled={!apifyToken.trim() || isSavingApify}
                     >
-                      {isSavingApify ? 'Salvando...' : apifyTokenStatus.configured && !apifyTokenStatus.fromEnv ? 'Atualizar Token' : 'Salvar Token'}
+                      {isSavingApify
+                        ? 'Salvando...'
+                        : apifyTokenStatus.configured && !apifyTokenStatus.fromEnv
+                          ? 'Atualizar Token'
+                          : 'Salvar Token'}
                     </Button>
                   </>
                 )}
@@ -708,29 +706,37 @@ function SettingsPageContent() {
                   <h3 className="font-medium text-foreground">Adzuna</h3>
                 </div>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Fonte agregadora com free tier de 1k chamadas/mês. Cobre Brasil e mais 16 países. Para usar, cadastre-se no{' '}
+                  Fonte agregadora com free tier de 1k chamadas/mês. Cobre Brasil e mais 16 países.
+                  Para usar, cadastre-se no{' '}
                   <a
-                    href={adzunaCredentialsStatus?.links?.signup || 'https://developer.adzuna.com/signup'}
+                    href={
+                      adzunaCredentialsStatus?.links?.signup ||
+                      'https://developer.adzuna.com/signup'
+                    }
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-accent hover:text-accent/80 underline inline-flex items-center gap-1"
                   >
                     developer.adzuna.com
                     <ExternalLink className="h-3 w-3" />
-                  </a>
-                  {' '}e cole suas credenciais abaixo.
+                  </a>{' '}
+                  e cole suas credenciais abaixo.
                 </p>
 
                 {adzunaCredentialsStatus.configured && !adzunaCredentialsStatus.fromEnv && (
                   <div className="mb-4 p-3 bg-success/10 border border-success text-success text-sm rounded-lg flex items-center gap-2">
                     <span className="text-success font-medium">✓ Credenciais configuradas</span>
-                    <span className="text-muted-foreground">via banco de dados (criptografado)</span>
+                    <span className="text-muted-foreground">
+                      via banco de dados (criptografado)
+                    </span>
                   </div>
                 )}
 
                 {adzunaCredentialsStatus.fromEnv && (
                   <div className="mb-4 p-3 bg-warning/10 border border-warning text-warning text-sm rounded-lg">
-                    <span className="font-medium">⚠ Credenciais vindo de variáveis de ambiente</span>
+                    <span className="font-medium">
+                      ⚠ Credenciais vindo de variáveis de ambiente
+                    </span>
                     <span className="text-muted-foreground block mt-1">
                       Configure via interface abaixo para gerenciar pelo sistema.
                     </span>
@@ -754,7 +760,9 @@ function SettingsPageContent() {
                     disabled={removeAdzunaCredentialsMutation.isPending}
                     className="mb-4"
                   >
-                    {removeAdzunaCredentialsMutation.isPending ? 'Removendo...' : 'Remover Credenciais'}
+                    {removeAdzunaCredentialsMutation.isPending
+                      ? 'Removendo...'
+                      : 'Remover Credenciais'}
                   </Button>
                 )}
 
@@ -780,7 +788,11 @@ function SettingsPageContent() {
                       onClick={handleAdzunaCredentialsSubmit}
                       disabled={!adzunaAppId.trim() || !adzunaAppKey.trim() || isSavingAdzuna}
                     >
-                      {isSavingAdzuna ? 'Salvando...' : adzunaCredentialsStatus.configured && !adzunaCredentialsStatus.fromEnv ? 'Atualizar Credenciais' : 'Salvar Credenciais'}
+                      {isSavingAdzuna
+                        ? 'Salvando...'
+                        : adzunaCredentialsStatus.configured && !adzunaCredentialsStatus.fromEnv
+                          ? 'Atualizar Credenciais'
+                          : 'Salvar Credenciais'}
                     </Button>
                   </>
                 )}
@@ -805,16 +817,23 @@ function SettingsPageContent() {
                 Como funciona?
               </h4>
               <p className="text-sm text-muted-foreground mb-2">
-                O sistema busca novas vagas automaticamente nos horários configurados abaixo.
-                Você também pode fazer uma busca manual a qualquer momento na aba &quot;Fontes&quot;.
+                O sistema busca novas vagas automaticamente nos horários configurados abaixo. Você
+                também pode fazer uma busca manual a qualquer momento na aba &quot;Fontes&quot;.
               </p>
               <p className="text-sm text-muted-foreground">
-                <strong className="text-foreground/80">Formato:</strong> minuto hora dia-do-mês mês dia-da-semana
+                <strong className="text-foreground/80">Formato:</strong> minuto hora dia-do-mês mês
+                dia-da-semana
               </p>
               <ul className="text-xs text-muted-foreground/70 mt-2 space-y-1">
-                <li>• <code className="text-muted-foreground">0 6 * * *</code> = Todo dia às 6h</li>
-                <li>• <code className="text-muted-foreground">*/6 * * * *</code> = A cada 6 horas</li>
-                <li>• <code className="text-muted-foreground">0 9 * * 1-5</code> = Dias úteis às 9h</li>
+                <li>
+                  • <code className="text-muted-foreground">0 6 * * *</code> = Todo dia às 6h
+                </li>
+                <li>
+                  • <code className="text-muted-foreground">*/6 * * * *</code> = A cada 6 horas
+                </li>
+                <li>
+                  • <code className="text-muted-foreground">0 9 * * 1-5</code> = Dias úteis às 9h
+                </li>
               </ul>
             </div>
             <form
@@ -823,20 +842,14 @@ function SettingsPageContent() {
             >
               <div>
                 <label className="text-sm font-medium">Coleta de Vagas</label>
-                <Input
-                  {...cronForm.register('jobCollectionCron')}
-                  placeholder="0 6 * * *"
-                />
+                <Input {...cronForm.register('jobCollectionCron')} placeholder="0 6 * * *" />
                 <p className="text-xs text-muted-foreground mt-1">
                   Padrão: todo dia às 6h (formato cron)
                 </p>
               </div>
               <div>
                 <label className="text-sm font-medium">Relatório Diário</label>
-                <Input
-                  {...cronForm.register('dailyReportCron')}
-                  placeholder="5 18 * * *"
-                />
+                <Input {...cronForm.register('dailyReportCron')} placeholder="5 18 * * *" />
                 <p className="text-xs text-muted-foreground mt-1">
                   Padrão: todo dia às 18:05 (formato cron)
                 </p>
@@ -849,5 +862,5 @@ function SettingsPageContent() {
         </Card>
       )}
     </div>
-  )
+  );
 }

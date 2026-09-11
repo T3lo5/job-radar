@@ -1,82 +1,99 @@
-import { useState, useCallback, useEffect, type ReactNode } from 'react'
-import * as ToastPrimitive from '@radix-ui/react-toast'
-import { X } from 'lucide-react'
-import { cn } from '../../lib/utils/cn'
+import { useState, useCallback, useEffect, type ReactNode } from 'react';
+import * as ToastPrimitive from '@radix-ui/react-toast';
+import { X } from 'lucide-react';
+import { cn } from '../../lib/utils/cn';
+import { Button } from './button';
 
-type ToastVariant = 'default' | 'success' | 'error' | 'warning'
+type ToastVariant = 'default' | 'success' | 'error' | 'warning';
 
 interface ToastData {
-  id: string
-  title?: string
-  description?: string
-  variant: ToastVariant
+  id: string;
+  title?: string;
+  description?: string;
+  variant: ToastVariant;
+  action?: {
+    label: string;
+    onClick: () => void;
+    variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
+  };
 }
 
-const TOAST_LIMIT = 5
-const TOAST_REMOVE_DELAY = 5000
+const TOAST_LIMIT = 5;
+const TOAST_REMOVE_DELAY = 5000;
 
-let toastCount = 0
+let toastCount = 0;
 
 const toastState: {
-  listeners: Set<(toasts: ToastData[]) => void>
-  toasts: ToastData[]
+  listeners: Set<(toasts: ToastData[]) => void>;
+  toasts: ToastData[];
 } = {
   listeners: new Set(),
   toasts: [],
-}
+};
 
 export function toast({
   title,
   description,
   variant = 'default',
+  action,
 }: {
-  title?: string
-  description?: string
-  variant?: ToastVariant
+  title?: string;
+  description?: string;
+  variant?: ToastVariant;
+  action?: ToastData['action'];
 }) {
-  const id = `toast-${toastCount++}`
-  const newToast: ToastData = { id, title, description, variant }
+  const id = `toast-${toastCount++}`;
+  const newToast: ToastData = { id, title, description, variant, action };
 
-  toastState.toasts = [...toastState.toasts.slice(-TOAST_LIMIT + 1), newToast]
-  toastState.listeners.forEach((l) => l(toastState.toasts))
+  toastState.toasts = [...toastState.toasts.slice(-TOAST_LIMIT + 1), newToast];
+  toastState.listeners.forEach((l) => l(toastState.toasts));
 
-  setTimeout(() => {
-    toastState.toasts = toastState.toasts.filter((t) => t.id !== id)
-    toastState.listeners.forEach((l) => l(toastState.toasts))
-  }, TOAST_REMOVE_DELAY)
+  // Don't auto-remove if there's an action
+  if (!action) {
+    setTimeout(() => {
+      toastState.toasts = toastState.toasts.filter((t) => t.id !== id);
+      toastState.listeners.forEach((l) => l(toastState.toasts));
+    }, TOAST_REMOVE_DELAY);
+  }
 }
 
-toast.success = (message: string | { title?: string; description?: string }) =>
+toast.success = (
+  message: string | { title?: string; description?: string; action?: ToastData['action'] },
+) =>
   typeof message === 'string'
     ? toast({ title: message, variant: 'success' })
-    : toast({ ...message, variant: 'success' })
-toast.error = (message: string | { title?: string; description?: string }) =>
+    : toast({ ...message, variant: 'success' });
+toast.error = (
+  message: string | { title?: string; description?: string; action?: ToastData['action'] },
+) =>
   typeof message === 'string'
     ? toast({ title: message, variant: 'error' })
-    : toast({ ...message, variant: 'error' })
-toast.warning = (message: string | { title?: string; description?: string }) =>
+    : toast({ ...message, variant: 'error' });
+toast.warning = (
+  message: string | { title?: string; description?: string; action?: ToastData['action'] },
+) =>
   typeof message === 'string'
     ? toast({ title: message, variant: 'warning' })
-    : toast({ ...message, variant: 'warning' })
+    : toast({ ...message, variant: 'warning' });
 
 export function ToastProvider({ children }: { children: ReactNode }) {
-  const [toasts, setToasts] = useState<ToastData[]>([])
+  const [toasts, setToasts] = useState<ToastData[]>([]);
 
   const updateToasts = useCallback((newToasts: ToastData[]) => {
-    setToasts(newToasts)
-  }, [])
+    setToasts(newToasts);
+  }, []);
 
   const removeToast = useCallback((id: string) => {
-    toastState.toasts = toastState.toasts.filter((t) => t.id !== id)
-    toastState.listeners.forEach((l) => l(toastState.toasts))
-  }, [])
+    toastState.toasts = toastState.toasts.filter((t) => t.id !== id);
+    toastState.listeners.forEach((l) => l(toastState.toasts));
+  }, []);
 
   useEffect(() => {
-    toastState.listeners.add(updateToasts)
+    toastState.listeners.add(updateToasts);
     return () => {
-      toastState.listeners.delete(updateToasts)
-    }
-  }, [updateToasts])
+      toastState.listeners.delete(updateToasts);
+    };
+  }, [updateToasts]);
 
   return (
     <ToastPrimitive.Provider>
@@ -98,6 +115,23 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               {t.title && <div className="font-medium">{t.title}</div>}
               {t.description && <div className="text-sm opacity-90">{t.description}</div>}
             </div>
+            {t.action &&
+              (() => {
+                const action = t.action;
+                return (
+                  <Button
+                    size="sm"
+                    variant={action.variant ?? 'outline'}
+                    onClick={() => {
+                      action.onClick();
+                      removeToast(t.id);
+                    }}
+                    className="shrink-0"
+                  >
+                    {action.label}
+                  </Button>
+                );
+              })()}
             <button
               onClick={() => removeToast(t.id)}
               className="shrink-0 rounded p-1 text-current opacity-60 hover:opacity-100"
@@ -109,7 +143,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         ))}
       </ToastPrimitive.ToastViewport>
     </ToastPrimitive.Provider>
-  )
+  );
 }
 
-export const useToast = toast
+export type { ToastData };
+export const useToast = toast;

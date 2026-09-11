@@ -250,6 +250,7 @@ model Job {
   createdById   String?    @map("created_by")
   createdAt     DateTime   @default(now()) @map("created_at")
   updatedAt     DateTime   @updatedAt @map("updated_at")
+  searchVector  Unsupported("tsvector")? @map("search_vector")
 
   source       JobSource      @relation(fields: [sourceId], references: [id], onDelete: Cascade)
   createdBy    User?          @relation("CreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
@@ -265,6 +266,7 @@ model Job {
   @@index([sourceId])
   @@index([externalId, sourceId])
   @@index([seniority])
+  @@index([searchVector], map: "jobs_search_vector_idx", type: Gin)
   @@map("jobs")
 }
 
@@ -345,6 +347,7 @@ model Application {
   profileId   String            @map("profile_id")
   status      ApplicationStatus @default(FOUND)
   appliedAt   DateTime?         @map("applied_at")
+  followUpAt  DateTime?         @map("follow_up_at")
   notes       String?
   salary      Int?
   result      String?

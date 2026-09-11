@@ -19,6 +19,7 @@ import { Skeleton } from '../components/ui/skeleton';
 import { EmptyState } from '../components/empty-state';
 import { ErrorBoundary } from '../components/error-boundary';
 import { toast } from '../components/ui/toast';
+import { handleApiError } from '../services/error-handler';
 import { cn } from '../lib/utils/cn';
 import { REMOTE_MODE_LABELS } from '@job-radar/shared';
 
@@ -35,7 +36,6 @@ const profileSchema = z.object({
   salaryCurrency: z.string().length(3).optional(),
   summary: z.string().max(5000).optional(),
   jobTypes: z.array(z.string()).optional(),
-  focusStacks: z.array(z.string()).optional(),
   discardTerms: z.array(z.string()).optional(),
 });
 
@@ -47,6 +47,36 @@ const skillSchema = z.object({
 
 type ProfileFormData = z.infer<typeof profileSchema>;
 type SkillFormData = z.infer<typeof skillSchema>;
+
+interface CvData {
+  name: string;
+  email?: string;
+  phone?: string;
+  title?: string;
+  summary?: string;
+  skills: string[];
+  experience: Array<{
+    company: string;
+    role: string;
+    period?: string;
+    description?: string;
+  }>;
+  education: Array<{
+    institution: string;
+    degree: string;
+    field?: string;
+  }>;
+  languages: string[];
+}
+
+interface ResumeItem {
+  id: string;
+  filename: string;
+  mimeType: string;
+  isDefault: boolean;
+  uploadedAt: string;
+  parsedJson?: CvData;
+}
 
 const SENIORITY_OPTIONS: {
   value: 'INTERN' | 'JUNIOR' | 'MID' | 'SENIOR' | 'SPECIALIST' | 'LEAD';
@@ -118,7 +148,6 @@ function ProfileLoading() {
 export function ProfilePage() {
   const [editing, setEditing] = useState(false);
   const [showSkillForm, setShowSkillForm] = useState(false);
-  const [newStack, setNewStack] = useState('');
   const [newJobType, setNewJobType] = useState('');
   const [newDiscardTerm, setNewDiscardTerm] = useState('');
   const [showEducationForm, setShowEducationForm] = useState(false);
@@ -183,7 +212,6 @@ export function ProfilePage() {
       salaryCurrency: profile?.salaryCurrency ?? 'BRL',
       summary: profile?.summary ?? '',
       jobTypes: profile?.jobTypes ?? [],
-      focusStacks: profile?.focusStacks ?? [],
       discardTerms: profile?.discardTerms ?? [],
     },
   });
@@ -201,7 +229,6 @@ export function ProfilePage() {
         salaryCurrency: profile.salaryCurrency ?? 'BRL',
         summary: profile.summary ?? '',
         jobTypes: profile.jobTypes ?? [],
-        focusStacks: profile.focusStacks ?? [],
         discardTerms: profile.discardTerms ?? [],
       });
     }
@@ -487,14 +514,107 @@ export function ProfilePage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['profile'] });
+      queryClient.invalidateQueries({ queryKey: ['resumes'] });
       toast.success('CV enviado com sucesso');
     },
-    onError: () => toast.error('Erro ao enviar CV'),
+    onError: (error) => handleApiError(error, 'uploadResume'),
+  });
+
+  const { data: resumesData } = useQuery({
+    queryKey: ['resumes'],
+    queryFn: () => profileApi.getResumes(),
+  });
+
+  const extractResumeMutation = useMutation({
+    mutationFn: async (resumeId: string) => {
+      const result = await profileApi.extractResume(resumeId);
+      return result;
+    },
+    onSuccess: (data, resumeId) => {
+      queryClient.setQueryData(['resumes'], (old: ResumeItem[] | undefined) => {
+        return old?.map((r) => (r.id === resumeId ? { ...r, parsedJson: data.extracted } : r));
+      });
+      toast.success('Dados extraídos com sucesso');
+    },
+    onError: (error) => handleApiError(error, 'extractResume'),
+  });
+
+  const applyResumeMutation = useMutation({
+    mutationFn: async (resumeId: string) => {
+      const resume = resumesData?.find((r: ResumeItem) => r.id === resumeId);
+      if (!resume?.parsedJson) {
+        throw new Error('Dados não extraídos');
+      }
+
+      const data = resume.parsedJson;
+      const currentProfile = await profileApi.get();
+
+      const updates: Promise<any>[] = [];
+
+      if (data.title) {
+        updates.push(profileApi.update({ title: data.title }));
+      }
+      if (data.summary) {
+        updates.push(profileApi.update({ summary: data.summary }));
+      }
+
+      const existingSkills = new Set(
+        (currentProfile.skills ?? []).map((s) => s.skill?.name?.toLowerCase()).filter(Boolean),
+      );
+      const skillsToAdd = data.skills
+        .filter((s: string) => !existingSkills.has(s.toLowerCase()))
+        .map((skillName: string) => profileApi.addSkill(skillName, 'INTERMEDIATE'));
+
+      if (skillsToAdd.length > 0) {
+        updates.push(Promise.all(skillsToAdd).then(() => {}));
+      }
+
+      const existingCompanies = new Set(
+        (currentProfile.workExperiences ?? []).map((w) => w.company.toLowerCase()),
+      );
+      data.experience.forEach((exp: { company: string; role: string; description?: string }) => {
+        if (exp.company && exp.role && !existingCompanies.has(exp.company.toLowerCase())) {
+          updates.push(
+            profileApi.addWorkExperience({
+              company: exp.company,
+              role: exp.role,
+              description: exp.description ?? '',
+            }),
+          );
+        }
+      });
+
+      const existingInstitutions = new Set(
+        (currentProfile.education ?? []).map((e) => e.institution.toLowerCase()),
+      );
+      data.education.forEach((edu: { institution: string; degree: string; field?: string }) => {
+        if (
+          edu.institution &&
+          edu.degree &&
+          !existingInstitutions.has(edu.institution.toLowerCase())
+        ) {
+          updates.push(
+            profileApi.addEducation({
+              institution: edu.institution,
+              degree: edu.degree,
+              field: edu.field ?? '',
+            }),
+          );
+        }
+      });
+
+      await Promise.all(updates);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['profile'] });
+      queryClient.invalidateQueries({ queryKey: ['resumes'] });
+      toast.success('Dados aplicados ao perfil');
+    },
+    onError: (error) => handleApiError(error, 'applyResume'),
   });
 
   const watchedSeniority = profileForm.watch('seniorityList');
   const watchedJobTypes = profileForm.watch('jobTypes');
-  const watchedStacks = profileForm.watch('focusStacks');
   const watchedDiscardTerms = profileForm.watch('discardTerms');
 
   const toggleSeniority = (
@@ -523,23 +643,6 @@ export function ProfilePage() {
       profileForm.setValue('jobTypes', [...current, trimmed]);
     }
     setNewJobType('');
-  };
-
-  const addStack = () => {
-    if (!newStack.trim()) return;
-    const current = watchedStacks ?? [];
-    if (!current.includes(newStack.trim())) {
-      profileForm.setValue('focusStacks', [...current, newStack.trim()]);
-    }
-    setNewStack('');
-  };
-
-  const removeStack = (stack: string) => {
-    const current = watchedStacks ?? [];
-    profileForm.setValue(
-      'focusStacks',
-      current.filter((s) => s !== stack),
-    );
   };
 
   const addDiscardTerm = () => {
@@ -596,17 +699,12 @@ export function ProfilePage() {
                   jobTypeOptions={JOB_TYPE_OPTIONS}
                   watchedSeniority={watchedSeniority}
                   watchedJobTypes={watchedJobTypes}
-                  watchedStacks={watchedStacks}
                   watchedDiscardTerms={watchedDiscardTerms}
                   toggleSeniority={toggleSeniority}
                   toggleJobType={toggleJobType}
                   newJobType={newJobType}
                   setNewJobType={setNewJobType}
                   addCustomJobType={addCustomJobType}
-                  newStack={newStack}
-                  setNewStack={setNewStack}
-                  addStack={addStack}
-                  removeStack={removeStack}
                   newDiscardTerm={newDiscardTerm}
                   setNewDiscardTerm={setNewDiscardTerm}
                   addDiscardTerm={addDiscardTerm}
@@ -647,17 +745,12 @@ export function ProfilePage() {
                   jobTypeOptions={JOB_TYPE_OPTIONS}
                   watchedSeniority={watchedSeniority}
                   watchedJobTypes={watchedJobTypes}
-                  watchedStacks={watchedStacks}
                   watchedDiscardTerms={watchedDiscardTerms}
                   toggleSeniority={toggleSeniority}
                   toggleJobType={toggleJobType}
                   newJobType={newJobType}
                   setNewJobType={setNewJobType}
                   addCustomJobType={addCustomJobType}
-                  newStack={newStack}
-                  setNewStack={setNewStack}
-                  addStack={addStack}
-                  removeStack={removeStack}
                   newDiscardTerm={newDiscardTerm}
                   setNewDiscardTerm={setNewDiscardTerm}
                   addDiscardTerm={addDiscardTerm}
@@ -1080,16 +1173,69 @@ export function ProfilePage() {
                     onChange={(e) => {
                       const file = e.target.files?.[0];
                       if (file) {
+                        // Validate file type
+                        const allowedTypes = [
+                          'application/pdf',
+                          'application/msword',
+                          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                          'text/plain',
+                        ];
+                        if (!allowedTypes.includes(file.type)) {
+                          toast.error('Tipo de arquivo não suportado. Use PDF, DOC, DOCX ou TXT.');
+                          return;
+                        }
+                        // Validate file size (max 10MB)
+                        if (file.size > 10 * 1024 * 1024) {
+                          toast.error('Arquivo muito grande. Tamanho máximo: 10MB.');
+                          return;
+                        }
                         uploadResumeMutation.mutate(file);
                       }
                     }}
                   />
-                  {profile.certifications && (
-                    <span className="text-xs text-muted-foreground">
-                      Formatos aceitos: PDF, DOC, DOCX, TXT
-                    </span>
-                  )}
+                  <span className="text-xs text-muted-foreground">
+                    Formatos aceitos: PDF, DOC, DOCX, TXT
+                  </span>
                 </div>
+
+                {resumesData && resumesData.length > 0 && (
+                  <div className="space-y-2">
+                    {resumesData.map((resume: ResumeItem) => (
+                      <div
+                        key={resume.id}
+                        className="flex items-center justify-between p-3 rounded-[var(--radius-sm)] bg-surface-2 border border-border"
+                      >
+                        <div>
+                          <p className="text-sm font-medium">{resume.filename}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(resume.uploadedAt).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <div className="flex gap-2">
+                          {!resume.parsedJson ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => extractResumeMutation.mutate(resume.id)}
+                              disabled={extractResumeMutation.isPending}
+                            >
+                              {extractResumeMutation.isPending ? 'Extraindo...' : 'Extrair dados'}
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="primary"
+                              onClick={() => applyResumeMutation.mutate(resume.id)}
+                              disabled={applyResumeMutation.isPending}
+                            >
+                              {applyResumeMutation.isPending ? 'Aplicando...' : 'Aplicar no perfil'}
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -1787,17 +1933,12 @@ function ProfileForm({
   jobTypeOptions,
   watchedSeniority,
   watchedJobTypes,
-  watchedStacks,
   watchedDiscardTerms,
   toggleSeniority,
   toggleJobType,
   newJobType,
   setNewJobType,
   addCustomJobType,
-  newStack,
-  setNewStack,
-  addStack,
-  removeStack,
   newDiscardTerm,
   setNewDiscardTerm,
   addDiscardTerm,
@@ -1811,17 +1952,12 @@ function ProfileForm({
   jobTypeOptions: string[];
   watchedSeniority?: string[];
   watchedJobTypes?: string[];
-  watchedStacks?: string[];
   watchedDiscardTerms?: string[];
   toggleSeniority: (value: 'INTERN' | 'JUNIOR' | 'MID' | 'SENIOR' | 'SPECIALIST' | 'LEAD') => void;
   toggleJobType: (value: string) => void;
   newJobType: string;
   setNewJobType: (v: string) => void;
   addCustomJobType: () => void;
-  newStack: string;
-  setNewStack: (v: string) => void;
-  addStack: () => void;
-  removeStack: (s: string) => void;
   newDiscardTerm: string;
   setNewDiscardTerm: (v: string) => void;
   addDiscardTerm: () => void;
@@ -1943,35 +2079,6 @@ function ProfileForm({
                 onClick={() => toggleJobType(type)}
                 className="hover:text-error"
               >
-                ×
-              </button>
-            </span>
-          ))}
-        </div>
-      </div>
-
-      {/* Stacks de foco */}
-      <div>
-        <label className="text-sm font-medium mb-2 block">Stacks de foco</label>
-        <div className="flex gap-2 mb-2">
-          <Input
-            value={newStack}
-            onChange={(e) => setNewStack(e.target.value)}
-            placeholder="Ex: React, Node.js, AWS..."
-            onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addStack())}
-          />
-          <Button type="button" onClick={addStack} variant="outline">
-            +
-          </Button>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {watchedStacks?.map((stack: string) => (
-            <span
-              key={stack}
-              className="inline-flex items-center gap-1 rounded-full bg-success/10 text-success px-3 py-1 text-sm"
-            >
-              {stack}
-              <button type="button" onClick={() => removeStack(stack)} className="hover:text-error">
                 ×
               </button>
             </span>

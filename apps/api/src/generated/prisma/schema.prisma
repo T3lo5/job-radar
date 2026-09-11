@@ -228,28 +228,29 @@ model JobSource {
 }
 
 model Job {
-  id             String     @id @default(cuid())
+  id             String                   @id @default(cuid())
   title          String
   company        String
   description    String
   location       String?
-  remote         RemoteMode @default(UNKNOWN)
+  remote         RemoteMode               @default(UNKNOWN)
   seniority      Seniority?
-  salaryMin      Int?       @map("salary_min")
-  salaryMax      Int?       @map("salary_max")
-  salaryCurrency String?    @map("salary_currency")
+  salaryMin      Int?                     @map("salary_min")
+  salaryMax      Int?                     @map("salary_max")
+  salaryCurrency String?                  @map("salary_currency")
   url            String
-  sourceId       String     @map("source_id")
-  externalId     String?    @map("external_id")
-  publishedAt    DateTime?  @map("published_at")
-  collectedAt    DateTime   @default(now()) @map("collected_at")
-  hash           String     @unique
-  status         JobStatus  @default(RAW)
-  sourceCount    Int        @default(1) @map("source_count")
-  rawData        Json?      @map("raw_data")
-  createdById    String?    @map("created_by")
-  createdAt      DateTime   @default(now()) @map("created_at")
-  updatedAt      DateTime   @updatedAt @map("updated_at")
+  sourceId       String                   @map("source_id")
+  externalId     String?                  @map("external_id")
+  publishedAt    DateTime?                @map("published_at")
+  collectedAt    DateTime                 @default(now()) @map("collected_at")
+  hash           String                   @unique
+  status         JobStatus                @default(RAW)
+  sourceCount    Int                      @default(1) @map("source_count")
+  rawData        Json?                    @map("raw_data")
+  createdById    String?                  @map("created_by")
+  createdAt      DateTime                 @default(now()) @map("created_at")
+  updatedAt      DateTime                 @updatedAt @map("updated_at")
+  searchVector   Unsupported("tsvector")? @map("search_vector")
 
   source         JobSource          @relation(fields: [sourceId], references: [id], onDelete: Cascade)
   createdBy      User?              @relation("CreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
@@ -265,6 +266,7 @@ model Job {
   @@index([sourceId])
   @@index([externalId, sourceId])
   @@index([seniority])
+  @@index([searchVector], map: "jobs_search_vector_idx", type: Gin)
   @@map("jobs")
 }
 
@@ -340,17 +342,18 @@ model JobAnalysis {
 // =============================================================================
 
 model Application {
-  id        String            @id @default(cuid())
-  jobId     String            @map("job_id")
-  profileId String            @map("profile_id")
-  status    ApplicationStatus @default(FOUND)
-  appliedAt DateTime?         @map("applied_at")
-  notes     String?
-  salary    Int?
-  result    String?
-  contacts  Json?
-  createdAt DateTime          @default(now()) @map("created_at")
-  updatedAt DateTime          @updatedAt @map("updated_at")
+  id         String            @id @default(cuid())
+  jobId      String            @map("job_id")
+  profileId  String            @map("profile_id")
+  status     ApplicationStatus @default(FOUND)
+  appliedAt  DateTime?         @map("applied_at")
+  followUpAt DateTime?         @map("follow_up_at")
+  notes      String?
+  salary     Int?
+  result     String?
+  contacts   Json?
+  createdAt  DateTime          @default(now()) @map("created_at")
+  updatedAt  DateTime          @updatedAt @map("updated_at")
 
   job     Job                @relation(fields: [jobId], references: [id], onDelete: Cascade)
   profile Profile            @relation(fields: [profileId], references: [id], onDelete: Cascade)

@@ -1,46 +1,52 @@
-import { useState } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
-import { applicationsApi, cvApi } from '../services/api'
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
-import { Button } from '../components/ui/button'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
-import { Skeleton } from '../components/ui/skeleton'
-import { EmptyState } from '../components/empty-state'
-import { toast } from '../components/ui/toast'
-import { FileText, Download, Loader2, Briefcase } from 'lucide-react'
+import { useState } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { applicationsApi, cvApi } from '../services/api';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Button } from '../components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
+import { Skeleton } from '../components/ui/skeleton';
+import { EmptyState } from '../components/empty-state';
+import { toast } from '../components/ui/toast';
+import { FileText, Download, Loader2, Briefcase } from 'lucide-react';
 
-type OptimizationMode = 'job' | 'manual'
+type OptimizationMode = 'job' | 'manual';
 
 type Application = {
-  id: string
-  status: string
+  id: string;
+  status: string;
   job: {
-    id: string
-    title: string
-    company: string
-    location: string | null
-  }
-}
+    id: string;
+    title: string;
+    company: string;
+    location: string | null;
+  };
+};
 
 export function CvOptimizerPage() {
-  const [mode, setMode] = useState<OptimizationMode>('job')
-  const [selectedJobId, setSelectedJobId] = useState<string>('')
-  const [manualJobDescription, setManualJobDescription] = useState('')
+  const [mode, setMode] = useState<OptimizationMode>('job');
+  const [selectedJobId, setSelectedJobId] = useState<string>('');
+  const [manualJobDescription, setManualJobDescription] = useState('');
   const [optimizedResult, setOptimizedResult] = useState<{
-    optimizedText: string
-    changes: Array<{ type: string; section: string; description: string }>
-    keywordsAdded: string[]
-    summary: string
-  } | null>(null)
+    optimizedText: string;
+    changes: Array<{ type: string; section: string; description: string }>;
+    keywordsAdded: string[];
+    summary: string;
+  } | null>(null);
 
   const { data: applicationsData, isLoading: applicationsLoading } = useQuery({
     queryKey: ['applications'],
     queryFn: () => applicationsApi.getList({ limit: 100 }),
-  })
+  });
 
   const interestingApplications = (applicationsData?.data ?? []).filter((app: Application) =>
     ['INTERESTING', 'CV_PREPARED', 'APPLIED', 'INTERVIEW', 'OFFER'].includes(app.status),
-  )
+  );
 
   const optimizeMutation = useMutation({
     mutationFn: () =>
@@ -54,11 +60,11 @@ export function CvOptimizerPage() {
         changes: data.changes,
         keywordsAdded: data.keywordsAdded,
         summary: data.summary,
-      })
-      toast.success('CV otimizado com sucesso!')
+      });
+      toast.success('CV otimizado com sucesso!');
     },
     onError: () => toast.error('Erro ao otimizar CV'),
-  })
+  });
 
   const exportPdfMutation = useMutation({
     mutationFn: () =>
@@ -68,28 +74,29 @@ export function CvOptimizerPage() {
         optimizedText: optimizedResult?.optimizedText,
       }),
     onError: () => toast.error('Erro ao gerar PDF'),
-  })
+  });
 
   const handleOptimize = () => {
     if (mode === 'job' && !selectedJobId) {
-      toast.error('Selecione uma vaga')
-      return
+      toast.error('Selecione uma vaga');
+      return;
     }
     if (mode === 'manual' && !manualJobDescription.trim()) {
-      toast.error('Cole a descrição da vaga')
-      return
+      toast.error('Cole a descrição da vaga');
+      return;
     }
-    optimizeMutation.mutate()
-  }
+    optimizeMutation.mutate();
+  };
 
-  const canOptimize = mode === 'job' ? !!selectedJobId : manualJobDescription.trim().length > 0
+  const canOptimize = mode === 'job' ? !!selectedJobId : manualJobDescription.trim().length > 0;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Otimizador de CV para ATS</h1>
         <p className="text-muted-foreground mt-1">
-          Otimize seu currículo para uma vaga específica usando IA, mantendo apenas seus dados reais.
+          Otimize seu currículo para uma vaga específica usando IA, mantendo apenas seus dados
+          reais.
         </p>
       </div>
 
@@ -99,10 +106,7 @@ export function CvOptimizerPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex gap-2">
-            <Button
-              variant={mode === 'job' ? 'primary' : 'outline'}
-              onClick={() => setMode('job')}
-            >
+            <Button variant={mode === 'job' ? 'primary' : 'outline'} onClick={() => setMode('job')}>
               <Briefcase className="h-4 w-4 mr-2" />
               Vaga salva
             </Button>
@@ -250,8 +254,10 @@ export function CvOptimizerPage() {
           icon={<FileText className="h-12 w-12" />}
           title="Nenhuma otimização ainda"
           description="Selecione uma vaga ou cole a descrição e clique em 'Otimizar CV' para começar."
+          actionLabel="Ver vagas"
+          actionHref="/jobs"
         />
       )}
     </div>
-  )
+  );
 }

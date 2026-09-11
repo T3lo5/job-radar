@@ -1,26 +1,33 @@
-import { useState } from 'react'
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { jobsApi, matchApi, applicationsApi, type Job, type MatchResult } from '../services/api'
-import { Card, CardContent } from '../components/ui/card'
-import { Button } from '../components/ui/button'
-import { Input } from '../components/ui/input'
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../components/ui/select'
-import { JobsSkeleton } from '../components/skeletons/jobs-skeleton'
-import { EmptyState } from '../components/empty-state'
-import { ErrorBoundary } from '../components/error-boundary'
-import { toast } from '../components/ui/toast'
-import { REMOTE_MODE_LABELS, SENIORITY_LABELS } from '@job-radar/shared'
-import { SENIORITY_COLORS } from '../lib/colors'
-import { Badge } from '../components/ui/badge'
-import { Briefcase, ChevronLeft } from 'lucide-react'
+import { useState } from 'react';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { jobsApi, matchApi, applicationsApi, type Job, type MatchResult } from '../services/api';
+import { handleApiError } from '../services/error-handler';
+import { Card, CardContent } from '../components/ui/card';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from '../components/ui/select';
+import { JobsSkeleton } from '../components/skeletons/jobs-skeleton';
+import { EmptyState } from '../components/empty-state';
+import { ErrorBoundary } from '../components/error-boundary';
+import { toast } from '../components/ui/toast';
+import { REMOTE_MODE_LABELS, SENIORITY_LABELS } from '@job-radar/shared';
+import { SENIORITY_COLORS } from '../lib/colors';
+import { Badge } from '../components/ui/badge';
+import { Briefcase, ChevronLeft } from 'lucide-react';
 
 interface Filters {
-  search: string
-  remote: string
-  seniority: string
-  status: string
-  minScore: number
-  sortBy: 'match' | 'date' | 'title'
+  search: string;
+  remote: string;
+  seniority: string;
+  status: string;
+  minScore: number;
+  sortBy: 'match' | 'date' | 'title';
 }
 
 function JobsPageContent() {
@@ -31,18 +38,18 @@ function JobsPageContent() {
     status: '',
     minScore: 0,
     sortBy: 'date',
-  })
-  const queryClient = useQueryClient()
+  });
+  const queryClient = useQueryClient();
 
   const { data: existingApplications } = useQuery({
     queryKey: ['applications'],
     queryFn: () => applicationsApi.getList({ limit: 100 }),
-  })
+  });
 
   const { data: matchResults } = useQuery({
     queryKey: ['match-results'],
     queryFn: () => matchApi.getResults(),
-  })
+  });
 
   const { data, fetchNextPage, isFetchingNextPage, isLoading } = useInfiniteQuery({
     queryKey: ['jobs', filters],
@@ -56,66 +63,68 @@ function JobsPageContent() {
         status: filters.status || undefined,
       }),
     getNextPageParam: (lastPage) => {
-      if (lastPage.pagination.page >= lastPage.pagination.totalPages) return undefined
-      return lastPage.pagination.page + 1
+      if (lastPage.pagination.page >= lastPage.pagination.totalPages) return undefined;
+      return lastPage.pagination.page + 1;
     },
     initialPageParam: 1,
-  })
+  });
 
   const evaluateMatch = useMutation({
     mutationFn: (jobId: string) => matchApi.evaluate(jobId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['match-results'] })
-      toast.success('Match avaliado com sucesso')
+      queryClient.invalidateQueries({ queryKey: ['match-results'] });
+      toast.success('Match avaliado com sucesso');
     },
-    onError: () => toast.error('Erro ao avaliar match'),
-  })
+    onError: (error, jobId) =>
+      handleApiError(error, 'evaluateMatch', () => evaluateMatch.mutate(jobId)),
+  });
 
   const createApplication = useMutation({
     mutationFn: (jobId: string) => applicationsApi.create(jobId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['applications'] })
-      toast.success('Candidatura criada com sucesso')
+      queryClient.invalidateQueries({ queryKey: ['applications'] });
+      toast.success('Candidatura criada com sucesso');
     },
-    onError: () => toast.error('Erro ao criar candidatura'),
-  })
+    onError: (error, jobId) =>
+      handleApiError(error, 'createApplication', () => createApplication.mutate(jobId)),
+  });
 
   const [trackedJobs, setTrackedJobs] = useState<Set<string>>(() => {
-    const apps = existingApplications?.data ?? []
-    return new Set(apps.map((a) => a.job.id))
-  })
+    const apps = existingApplications?.data ?? [];
+    return new Set(apps.map((a) => a.job.id));
+  });
 
-  const allJobs = data?.pages.flatMap((page) => page.data) ?? []
-  const totalJobs = data?.pages[0]?.pagination.total ?? 0
-  const totalPages = data?.pages[0]?.pagination.totalPages ?? 0
-  const currentPage = data?.pages.length ?? 0
+  const allJobs = data?.pages.flatMap((page) => page.data) ?? [];
+  const totalJobs = data?.pages[0]?.pagination.total ?? 0;
+  const totalPages = data?.pages[0]?.pagination.totalPages ?? 0;
+  const currentPage = data?.pages.length ?? 0;
 
-  const matchResultsMap = new Map<string, MatchResult>()
-  matchResults?.forEach((r) => matchResultsMap.set(r.job.id, r))
+  const matchResultsMap = new Map<string, MatchResult>();
+  matchResults?.forEach((r) => matchResultsMap.set(r.job.id, r));
 
   const handleTrack = (jobId: string) => {
     createApplication.mutate(jobId, {
       onSuccess: () => setTrackedJobs((prev) => new Set(prev).add(jobId)),
-    })
-  }
+    });
+  };
 
   const getMatchResult = (jobId: string): MatchResult | undefined => {
-    return matchResultsMap.get(jobId)
-  }
+    return matchResultsMap.get(jobId);
+  };
 
   const sortedJobs = [...allJobs].sort((a, b) => {
     switch (filters.sortBy) {
       case 'match':
-        const scoreA = matchResultsMap.get(a.id)?.score ?? -1
-        const scoreB = matchResultsMap.get(b.id)?.score ?? -1
-        return scoreB - scoreA
+        const scoreA = matchResultsMap.get(a.id)?.score ?? -1;
+        const scoreB = matchResultsMap.get(b.id)?.score ?? -1;
+        return scoreB - scoreA;
       case 'title':
-        return a.title.localeCompare(b.title)
+        return a.title.localeCompare(b.title);
       case 'date':
       default:
-        return new Date(b.collectedAt).getTime() - new Date(a.collectedAt).getTime()
+        return new Date(b.collectedAt).getTime() - new Date(a.collectedAt).getTime();
     }
-  })
+  });
 
   return (
     <div className="space-y-4">
@@ -185,7 +194,9 @@ function JobsPageContent() {
             </Select>
             <Select
               value={filters.sortBy}
-              onValueChange={(value: string) => setFilters({ ...filters, sortBy: value as Filters['sortBy'] })}
+              onValueChange={(value: string) =>
+                setFilters({ ...filters, sortBy: value as Filters['sortBy'] })
+              }
             >
               <SelectTrigger className="w-48">
                 <SelectValue placeholder="Ordenar por" />
@@ -208,6 +219,8 @@ function JobsPageContent() {
           icon={<Briefcase className="h-12 w-12" />}
           title="Nenhuma vaga encontrada"
           description="Ajuste os filtros ou colete novas vagas."
+          actionLabel="Configurar fontes"
+          actionHref="/settings"
         />
       ) : (
         <div className="space-y-4">
@@ -249,7 +262,7 @@ function JobsPageContent() {
         </div>
       )}
     </div>
-  )
+  );
 }
 
 export function JobsPage() {
@@ -257,20 +270,28 @@ export function JobsPage() {
     <ErrorBoundary onRetry={() => window.location.reload()}>
       <JobsPageContent />
     </ErrorBoundary>
-  )
+  );
 }
 
 interface JobCardProps {
-  job: Job
-  matchResult?: MatchResult
-  onEvaluate: () => void
-  evaluating: boolean
-  onTrack: () => void
-  tracking: boolean
-  isTracked: boolean
+  job: Job;
+  matchResult?: MatchResult;
+  onEvaluate: () => void;
+  evaluating: boolean;
+  onTrack: () => void;
+  tracking: boolean;
+  isTracked: boolean;
 }
 
-function JobCard({ job, matchResult, onEvaluate, evaluating, onTrack, tracking, isTracked }: JobCardProps) {
+function JobCard({
+  job,
+  matchResult,
+  onEvaluate,
+  evaluating,
+  onTrack,
+  tracking,
+  isTracked,
+}: JobCardProps) {
   return (
     <Card>
       <CardContent className="pt-6">
@@ -281,9 +302,11 @@ function JobCard({ job, matchResult, onEvaluate, evaluating, onTrack, tracking, 
               {matchResult && (
                 <Badge
                   variant={
-                    matchResult.score >= 80 ? 'success' :
-                    matchResult.score >= 60 ? 'warning' :
-                    'error'
+                    matchResult.score >= 80
+                      ? 'success'
+                      : matchResult.score >= 60
+                        ? 'warning'
+                        : 'error'
                   }
                 >
                   {matchResult.score}%
@@ -292,11 +315,10 @@ function JobCard({ job, matchResult, onEvaluate, evaluating, onTrack, tracking, 
             </div>
             <p className="text-muted-foreground">{job.company}</p>
             <div className="mt-2 flex flex-wrap gap-2 text-sm">
-              {job.location && (
-                <Badge variant="default">{job.location}</Badge>
-              )}
+              {job.location && <Badge variant="default">{job.location}</Badge>}
               <Badge variant="default">
-                {REMOTE_MODE_LABELS[job.remote?.toLowerCase() as keyof typeof REMOTE_MODE_LABELS]?.label ?? job.remote}
+                {REMOTE_MODE_LABELS[job.remote?.toLowerCase() as keyof typeof REMOTE_MODE_LABELS]
+                  ?.label ?? job.remote}
               </Badge>
               {job.seniority && job.seniority !== 'UNKNOWN' && (
                 <Badge
@@ -312,9 +334,7 @@ function JobCard({ job, matchResult, onEvaluate, evaluating, onTrack, tracking, 
               )}
             </div>
             <div className="mt-2 flex flex-wrap gap-1">
-              {job.status === 'RAW' && (
-                <Badge variant="primary">Novo</Badge>
-              )}
+              {job.status === 'RAW' && <Badge variant="primary">Novo</Badge>}
               <Badge variant="default">{job.sourceId}</Badge>
             </div>
           </div>
@@ -327,12 +347,7 @@ function JobCard({ job, matchResult, onEvaluate, evaluating, onTrack, tracking, 
             >
               {tracking ? '...' : isTracked ? '✓' : '+'}
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={onEvaluate}
-              disabled={evaluating}
-            >
+            <Button size="sm" variant="outline" onClick={onEvaluate} disabled={evaluating}>
               {evaluating ? '...' : matchResult ? `${matchResult.score}%` : 'Avaliar match'}
             </Button>
             <Button
@@ -346,5 +361,5 @@ function JobCard({ job, matchResult, onEvaluate, evaluating, onTrack, tracking, 
         </div>
       </CardContent>
     </Card>
-  )
+  );
 }

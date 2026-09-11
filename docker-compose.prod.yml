@@ -1,0 +1,161 @@
+# Job Radar - Production Docker Compose
+# Usage: docker compose -f docker-compose.prod.yml up -d
+# 
+# This file is optimized for production deployment:
+# - Multi-stage builds for smaller images
+# - Non-root users
+# - Resource limits
+# - Health checks
+# - Proper logging
+# - Security hardening
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: job-radar-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-jobradar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-jobradar}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - jobradar-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-jobradar} -d ${POSTGRES_DB:-jobradar}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+
+  redis:
+    image: redis:7-alpine
+    container_name: job-radar-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - jobradar-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: prod
+    container_name: job-radar-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      APP_PORT: 3001
+      APP_HOST: 0.0.0.0
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: postgres://${POSTGRES_USER:-jobradar}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-jobradar}
+      REDIS_URL: redis://redis:6379
+      SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY}
+    ports:
+      - "127.0.0.1:${APP_PORT:-3001}:3001"
+    volumes:
+      - api-storage:/app/storage
+    networks:
+      - jobradar-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://127.0.0.1:3001/health/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      target: prod
+    container_name: job-radar-web
+    restart: unless-stopped
+    environment:
+      API_URL: http://api:3001
+    ports:
+      - "127.0.0.1:${WEB_PORT_PROD:-8080}:80"
+    networks:
+      - jobradar-net
+    depends_on:
+      - api
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://127.0.0.1/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  jobradar-net:
+    name: jobradar-net
+    driver: bridge
+    internal: false
+
+volumes:
+  postgres-data:
+    name: job-radar-postgres-data
+  redis-data:
+    name: job-radar-redis-data
+  api-storage:
+    name: job-radar-api-storage

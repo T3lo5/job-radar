@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   DndContext,
   DragOverlay,
@@ -9,18 +9,19 @@ import {
   useSensors,
   type DragStartEvent,
   type DragEndEvent,
-} from '@dnd-kit/core'
-import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
-import { useSortable } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
-import { Plus, ExternalLink, Calendar } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
-import { applicationsApi, jobsApi } from '../services/api'
-import { toast } from '../components/ui/toast'
-import { ErrorBoundary } from '../components/error-boundary'
-import { EmptyState } from '../components/empty-state'
-import { Skeleton } from '../components/ui/skeleton'
-import { Button } from '../components/ui/button'
+} from '@dnd-kit/core';
+import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { Plus, ExternalLink, Calendar, Bell } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { applicationsApi, jobsApi } from '../services/api';
+import { handleApiError } from '../services/error-handler';
+import { toast } from '../components/ui/toast';
+import { ErrorBoundary } from '../components/error-boundary';
+import { EmptyState } from '../components/empty-state';
+import { Skeleton } from '../components/ui/skeleton';
+import { Button } from '../components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -29,21 +30,21 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '../components/ui/dialog'
-import { Input } from '../components/ui/input'
+} from '../components/ui/dialog';
+import { Input } from '../components/ui/input';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '../components/ui/select'
-import { FileText } from 'lucide-react'
+} from '../components/ui/select';
+import { FileText } from 'lucide-react';
 
 interface ColumnConfig {
-  id: string
-  title: string
-  color: string
+  id: string;
+  title: string;
+  color: string;
 }
 
 const COLUMNS: ColumnConfig[] = [
@@ -55,33 +56,34 @@ const COLUMNS: ColumnConfig[] = [
   { id: 'OFFER', title: 'Oferta', color: 'bg-surface-2 border-success' },
   { id: 'REJECTED', title: 'Rejeitada', color: 'bg-error/10 border-error' },
   { id: 'ARCHIVED', title: 'Arquivada', color: 'bg-surface-2 border-muted' },
-]
+];
 
 interface ManualJobForm {
-  title: string
-  company: string
-  description: string
-  location: string
-  remote: string
-  seniority: string
-  url: string
-  applicationStatus: string
+  title: string;
+  company: string;
+  description: string;
+  location: string;
+  remote: string;
+  seniority: string;
+  url: string;
+  applicationStatus: string;
 }
 
 interface Application {
-  id: string
-  status: string
-  notes: string | null
-  appliedAt: string | null
+  id: string;
+  status: string;
+  notes: string | null;
+  appliedAt: string | null;
+  followUpAt: string | null;
   job: {
-    id: string
-    title: string
-    company: string
-    description: string
-    location: string | null
-    remote: string
-    url: string
-  }
+    id: string;
+    title: string;
+    company: string;
+    description: string;
+    location: string | null;
+    remote: string;
+    url: string;
+  };
 }
 
 function ApplicationsLoading() {
@@ -104,17 +106,17 @@ function ApplicationsLoading() {
         ))}
       </div>
     </div>
-  )
+  );
 }
 
 export function ApplicationsPage() {
-  const [activeId, setActiveId] = useState<string | null>(null)
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
-  const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false)
-  const [selectedApplication, setSelectedApplication] = useState<Application | null>(null)
-  const [descriptionDraft, setDescriptionDraft] = useState('')
-  const navigate = useNavigate()
-  const queryClient = useQueryClient()
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
+  const [selectedApplication, setSelectedApplication] = useState<Application | null>(null);
+  const [descriptionDraft, setDescriptionDraft] = useState('');
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const createJobMutation = useMutation({
     mutationFn: (data: ManualJobForm) =>
@@ -129,35 +131,37 @@ export function ApplicationsPage() {
         applicationStatus: data.applicationStatus || null,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['applications'] })
-      queryClient.invalidateQueries({ queryKey: ['jobs'] })
-      toast.success('Vaga adicionada com sucesso')
-      setIsAddDialogOpen(false)
+      queryClient.invalidateQueries({ queryKey: ['applications'] });
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
+      toast.success('Vaga adicionada com sucesso');
+      setIsAddDialogOpen(false);
     },
-    onError: () => toast.error('Erro ao adicionar vaga'),
-  })
+    onError: (error) => handleApiError(error, 'createJob'),
+  });
 
   const { data: applications, isLoading } = useQuery({
     queryKey: ['applications'],
     queryFn: () => applicationsApi.getList({ limit: 100 }),
-  })
+  });
 
   const updateStatus = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) =>
       applicationsApi.updateStatus(id, status),
     onSuccess: (_, { status }) => {
-      queryClient.invalidateQueries({ queryKey: ['applications'] })
-      toast.success(`Status atualizado para "${COLUMNS.find((c) => c.id === status)?.title ?? status}"`)
+      queryClient.invalidateQueries({ queryKey: ['applications'] });
+      toast.success(
+        `Status atualizado para "${COLUMNS.find((c) => c.id === status)?.title ?? status}"`,
+      );
     },
-    onError: () => toast.error('Erro ao atualizar status'),
-  })
+    onError: (error) => handleApiError(error, 'updateStatus'),
+  });
 
   const updateDescriptionMutation = useMutation({
     mutationFn: ({ jobId, description }: { jobId: string; description: string }) =>
       jobsApi.updateDescription(jobId, description),
     onSuccess: (updatedJob) => {
       queryClient.setQueryData(['applications'], (old: { data: Application[] } | undefined) => {
-        if (!old?.data) return old
+        if (!old?.data) return old;
         return {
           ...old,
           data: old.data.map((app) =>
@@ -171,73 +175,98 @@ export function ApplicationsPage() {
                 }
               : app,
           ),
-        }
-      })
-      queryClient.invalidateQueries({ queryKey: ['jobs'] })
+        };
+      });
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
       setSelectedApplication((current) => {
-        if (!current) return current
+        if (!current) return current;
         return {
           ...current,
           job: {
             ...current.job,
             description: updatedJob.description,
           },
-        }
-      })
-      setDescriptionDraft(updatedJob.description || '')
-      toast.success('Descrição atualizada')
+        };
+      });
+      setDescriptionDraft(updatedJob.description || '');
+      toast.success('Descrição atualizada');
     },
-    onError: () => toast.error('Erro ao atualizar descrição'),
-  })
+    onError: (error) => handleApiError(error, 'updateDescription'),
+  });
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-  )
+  const [isFollowUpDialogOpen, setIsFollowUpDialogOpen] = useState(false);
+  const [followUpAppId, setFollowUpAppId] = useState<string | null>(null);
 
-  const applicationsList = applications?.data ?? []
+  const updateFollowUpMutation = useMutation({
+    mutationFn: ({ id, followUpAt }: { id: string; followUpAt: string | null }) =>
+      applicationsApi.updateFollowUp(id, followUpAt),
+    onSuccess: (_, { followUpAt }) => {
+      queryClient.invalidateQueries({ queryKey: ['applications'] });
+      toast.success(followUpAt ? 'Lembrete agendado' : 'Lembrete removido');
+      setIsFollowUpDialogOpen(false);
+      setFollowUpAppId(null);
+    },
+    onError: (error) => handleApiError(error, 'updateFollowUp'),
+  });
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+
+  // Listen for follow-up dialog open event from ApplicationCard
+  useState(() => {
+    const handler = (event: CustomEvent<{ id: string }>) => {
+      setFollowUpAppId(event.detail.id);
+      setIsFollowUpDialogOpen(true);
+    };
+    window.addEventListener('open-followup', handler as EventListener);
+    return () => window.removeEventListener('open-followup', handler as EventListener);
+  });
+
+  const applicationsList = applications?.data ?? [];
 
   function getApplicationsByStatus(status: string): Application[] {
-    return applicationsList.filter((app) => app.status === status)
+    return applicationsList.filter((app) => app.status === status);
   }
 
   function handleDragStart(event: DragStartEvent) {
-    setActiveId(event.active.id as string)
+    setActiveId(event.active.id as string);
   }
 
   function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event
-    setActiveId(null)
+    const { active, over } = event;
+    setActiveId(null);
 
-    if (!over) return
+    if (!over) return;
 
-    const activeApp = applicationsList.find((a) => a.id === active.id)
-    if (!activeApp) return
+    const activeApp = applicationsList.find((a) => a.id === active.id);
+    if (!activeApp) return;
 
-    let overColumn = COLUMNS.find((col) => col.id === over.id)
+    let overColumn = COLUMNS.find((col) => col.id === over.id);
 
     if (!overColumn) {
-      const containerId = (over.data as { current?: { sortable?: { containerId?: string } } } | undefined)?.current?.sortable?.containerId
+      const containerId = (
+        over.data as { current?: { sortable?: { containerId?: string } } } | undefined
+      )?.current?.sortable?.containerId;
       if (typeof containerId === 'string') {
-        overColumn = COLUMNS.find((col) => col.id === containerId)
+        overColumn = COLUMNS.find((col) => col.id === containerId);
       }
     }
 
     if (overColumn && activeApp.status !== overColumn.id) {
-      updateStatus.mutate({ id: active.id as string, status: overColumn.id })
+      updateStatus.mutate({ id: active.id as string, status: overColumn.id });
     }
   }
 
   function handleCardClick(application: Application) {
-    setSelectedApplication(application)
-    setDescriptionDraft(application.job.description || '')
-    setIsDetailDialogOpen(true)
+    setSelectedApplication(application);
+    setDescriptionDraft(application.job.description || '');
+    setIsDetailDialogOpen(true);
   }
 
-  const totalApplications = applicationsList.length
+  const totalApplications = applicationsList.length;
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault()
-    const formData = new FormData(e.currentTarget)
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
     createJobMutation.mutate({
       title: formData.get('title') as string,
       company: formData.get('company') as string,
@@ -247,11 +276,11 @@ export function ApplicationsPage() {
       seniority: (formData.get('seniority') as string) || '',
       url: formData.get('url') as string,
       applicationStatus: (formData.get('applicationStatus') as string) || '',
-    })
+    });
   }
 
   const content = () => {
-    if (isLoading) return <ApplicationsLoading />
+    if (isLoading) return <ApplicationsLoading />;
 
     if (totalApplications === 0) {
       return (
@@ -259,8 +288,10 @@ export function ApplicationsPage() {
           icon={<FileText className="h-12 w-12" />}
           title="Nenhuma candidatura ainda"
           description="Comece a aplicando para vagas na página de Vagas."
+          actionLabel="Ir para Vagas"
+          actionHref="/jobs"
         />
-      )
+      );
     }
 
     return (
@@ -272,7 +303,7 @@ export function ApplicationsPage() {
       >
         <div className="flex gap-4 overflow-x-auto pb-4">
           {COLUMNS.map((column) => {
-            const columnApps = getApplicationsByStatus(column.id)
+            const columnApps = getApplicationsByStatus(column.id);
             return (
               <KanbanColumn
                 key={column.id}
@@ -282,16 +313,21 @@ export function ApplicationsPage() {
                 applications={columnApps}
                 onCardClick={handleCardClick}
               />
-            )
+            );
           })}
         </div>
 
         <DragOverlay>
-          {activeId ? <ApplicationCard application={applicationsList.find((a) => a.id === activeId)!} overlay /> : null}
+          {activeId ? (
+            <ApplicationCard
+              application={applicationsList.find((a) => a.id === activeId)!}
+              overlay
+            />
+          ) : null}
         </DragOverlay>
       </DndContext>
-    )
-  }
+    );
+  };
 
   return (
     <ErrorBoundary onRetry={() => window.location.reload()}>
@@ -403,13 +439,16 @@ export function ApplicationsPage() {
           </Dialog>
         </div>
 
-        <Dialog open={isDetailDialogOpen && !!selectedApplication} onOpenChange={(open) => {
-          setIsDetailDialogOpen(open)
-          if (!open) {
-            setSelectedApplication(null)
-            setDescriptionDraft('')
-          }
-        }}>
+        <Dialog
+          open={isDetailDialogOpen && !!selectedApplication}
+          onOpenChange={(open) => {
+            setIsDetailDialogOpen(open);
+            if (!open) {
+              setSelectedApplication(null);
+              setDescriptionDraft('');
+            }
+          }}
+        >
           <DialogContent className="max-w-2xl w-full">
             <DialogHeader>
               <DialogTitle>{selectedApplication?.job.title}</DialogTitle>
@@ -469,7 +508,10 @@ export function ApplicationsPage() {
                   </div>
                 )}
                 <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2">
-                  <Button variant="outline" onClick={() => navigate(`/jobs/${selectedApplication.job.id}`)}>
+                  <Button
+                    variant="outline"
+                    onClick={() => navigate(`/jobs/${selectedApplication.job.id}`)}
+                  >
                     Ver detalhes da vaga
                   </Button>
                   <Button asChild>
@@ -484,22 +526,75 @@ export function ApplicationsPage() {
           </DialogContent>
         </Dialog>
 
+        {/* Follow-up Reminder Dialog */}
+        <Dialog open={isFollowUpDialogOpen} onOpenChange={setIsFollowUpDialogOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Agendar lembrete</DialogTitle>
+              <DialogDescription>
+                Defina uma data para receber um lembrete de acompanhamento desta candidatura.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label htmlFor="followUpDate" className="text-sm font-medium text-muted-foreground">
+                  Data do lembrete
+                </label>
+                <Input
+                  id="followUpDate"
+                  type="date"
+                  value={
+                    followUpAppId
+                      ? applicationsList
+                          .find((a) => a.id === followUpAppId)
+                          ?.followUpAt?.split('T')[0] || ''
+                      : ''
+                  }
+                  onChange={(e) => {
+                    if (followUpAppId) {
+                      const newDate = e.target.value;
+                      updateFollowUpMutation.mutate({
+                        id: followUpAppId,
+                        followUpAt: newDate ? new Date(newDate).toISOString() : null,
+                      });
+                    }
+                  }}
+                  className="flex w-full"
+                />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Deixe em branco para remover o lembrete agendado.
+              </p>
+            </div>
+            <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2">
+              <Button
+                variant="outline"
+                onClick={() =>
+                  updateFollowUpMutation.mutate({ id: followUpAppId!, followUpAt: null })
+                }
+              >
+                Remover lembrete
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         {content()}
       </div>
     </ErrorBoundary>
-  )
+  );
 }
 
 interface KanbanColumnProps {
-  id: string
-  title: string
-  color: string
-  applications: Application[]
-  onCardClick: (application: Application) => void
+  id: string;
+  title: string;
+  color: string;
+  applications: Application[];
+  onCardClick: (application: Application) => void;
 }
 
 function KanbanColumn({ id, title, color, applications, onCardClick }: KanbanColumnProps) {
-  const { setNodeRef } = useSortable({ id })
+  const { setNodeRef } = useSortable({ id });
 
   return (
     <div
@@ -512,39 +607,46 @@ function KanbanColumn({ id, title, color, applications, onCardClick }: KanbanCol
           {applications.length}
         </span>
       </div>
-      <SortableContext id={id} items={applications.map((a) => a.id)} strategy={verticalListSortingStrategy}>
+      <SortableContext
+        id={id}
+        items={applications.map((a) => a.id)}
+        strategy={verticalListSortingStrategy}
+      >
         <div className="min-h-[200px] space-y-2">
           {applications.map((app) => (
             <ApplicationCard key={app.id} application={app} onClick={() => onCardClick(app)} />
           ))}
           {applications.length === 0 && (
-            <p className="py-4 text-center text-sm text-muted-foreground">
-              Arraste cards aqui
-            </p>
+            <p className="py-4 text-center text-sm text-muted-foreground">Arraste cards aqui</p>
           )}
         </div>
       </SortableContext>
     </div>
-  )
+  );
 }
 
 interface ApplicationCardProps {
-  application: Application
-  overlay?: boolean
-  onClick?: () => void
+  application: Application;
+  overlay?: boolean;
+  onClick?: () => void;
 }
 
 function ApplicationCard({ application, overlay, onClick }: ApplicationCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: application.id,
-  })
+  });
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-  }
+  };
 
-  if (!application) return null
+  if (!application) return null;
+
+  const isFollowUpSoon =
+    application.followUpAt &&
+    new Date(application.followUpAt) <= new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const isFollowUpOverdue = application.followUpAt && new Date(application.followUpAt) < new Date();
 
   return (
     <div
@@ -555,18 +657,44 @@ function ApplicationCard({ application, overlay, onClick }: ApplicationCardProps
       onClick={onClick}
       className={`cursor-grab rounded border border-border bg-surface p-3 shadow-sm active:cursor-grabbing ${
         overlay ? 'ring-2 ring-accent shadow-lg' : ''
-      } ${isDragging ? 'opacity-50' : ''}`}
+      } ${isDragging ? 'opacity-50' : ''} ${isFollowUpOverdue ? 'border-error' : isFollowUpSoon ? 'border-warning' : ''}`}
     >
-      <div className="font-medium text-sm text-foreground">{application.job.title}</div>
-      <div className="text-xs text-muted-foreground">{application.job.company}</div>
-      {application.job.location && (
-        <div className="mt-1 text-xs text-muted-foreground">{application.job.location}</div>
-      )}
-      {application.appliedAt && (
-        <div className="mt-2 text-xs text-muted-foreground">
-          Aplicou em {new Date(application.appliedAt).toLocaleDateString()}
+      <div className="flex items-start justify-between">
+        <div className="flex-1">
+          <div className="font-medium text-sm text-foreground">{application.job.title}</div>
+          <div className="text-xs text-muted-foreground">{application.job.company}</div>
+          {application.job.location && (
+            <div className="mt-1 text-xs text-muted-foreground">{application.job.location}</div>
+          )}
+          {application.appliedAt && (
+            <div className="mt-2 text-xs text-muted-foreground">
+              Aplicou em {new Date(application.appliedAt).toLocaleDateString()}
+            </div>
+          )}
+          {application.followUpAt && (
+            <div
+              className={`mt-2 flex items-center gap-1 text-xs ${isFollowUpOverdue ? 'text-error' : isFollowUpSoon ? 'text-warning' : 'text-muted-foreground'}`}
+            >
+              <Bell className="h-3 w-3" />
+              {isFollowUpOverdue ? 'Atrasado' : 'Lembrete'} em{' '}
+              {new Date(application.followUpAt).toLocaleDateString()}
+            </div>
+          )}
         </div>
-      )}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+          onClick={(e) => {
+            e.stopPropagation();
+            window.dispatchEvent(
+              new CustomEvent('open-followup', { detail: { id: application.id } }),
+            );
+          }}
+        >
+          <Bell className="h-3.5 w-3.5" />
+        </Button>
+      </div>
     </div>
-  )
+  );
 }

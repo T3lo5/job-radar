@@ -1,28 +1,28 @@
-import { prisma } from '../../db/prisma.js'
-import { computeMatchScore, type MatchResult } from '../matching/engine.js'
-import { ExtractionStep } from './extraction-step.js'
-import { MatchingStep } from './matching-step.js'
-import { AnalysisStep } from './analysis-step.js'
-import type { ProcessingStep, StepDependencies } from './step.js'
-import { createJobExtractor, createJobAnalyzer } from '../ai/factory.js'
+import { prisma } from '../../db/prisma.js';
+import { computeMatchScore, type MatchResult } from '../matching/engine.js';
+import { ExtractionStep } from './extraction-step.js';
+import { MatchingStep } from './matching-step.js';
+import { AnalysisStep } from './analysis-step.js';
+import type { ProcessingStep, StepDependencies } from './step.js';
+import { createJobExtractor, createJobAnalyzer } from '../ai/factory.js';
 
 export interface PipelineDeps {
-  enqueueJob: (name: string, data: Record<string, unknown>) => Promise<void>
+  enqueueJob: (name: string, data: Record<string, unknown>) => Promise<void>;
 }
 
 export class PipelineOrchestrator {
-  private steps: Map<string, ProcessingStep>
-  private deps: StepDependencies
-  private readonly enqueueJob: PipelineDeps['enqueueJob']
+  private steps: Map<string, ProcessingStep>;
+  private deps: StepDependencies;
+  private readonly enqueueJob: PipelineDeps['enqueueJob'];
 
   constructor(pipelineDeps: PipelineDeps) {
-    this.enqueueJob = pipelineDeps.enqueueJob
+    this.enqueueJob = pipelineDeps.enqueueJob;
 
     this.steps = new Map<string, ProcessingStep>([
       ['extract', new ExtractionStep()],
       ['match', new MatchingStep()],
       ['analyze', new AnalysisStep()],
-    ])
+    ]);
 
     this.deps = {
       createJobExtractor: () => createJobExtractor(),
@@ -30,25 +30,25 @@ export class PipelineOrchestrator {
       computeMatchScore: (job: any, profile: any, allSkills: any[]): MatchResult =>
         computeMatchScore(job, profile, allSkills),
       enqueueNext: async (jobId: string, stepName: string) => {
-        const jobName = stepName === 'match' ? 'match-job' : 'analyze-job'
-        await this.enqueueJob(jobName, { jobId })
+        const jobName = stepName === 'match' ? 'match-job' : 'analyze-job';
+        await this.enqueueJob(jobName, { jobId });
       },
-    }
+    };
   }
 
   async run(jobId: string, stepName: string): Promise<void> {
-    const step = this.steps.get(stepName)
+    const step = this.steps.get(stepName);
     if (!step) {
-      console.warn(`Unknown pipeline step: ${stepName}`)
-      return
+      console.warn(`Unknown pipeline step: ${stepName}`);
+      return;
     }
 
     const ctx = {
       jobId,
       prisma: this.prismaAdapter(),
-    }
+    };
 
-    await step.run(ctx, this.deps)
+    await step.run(ctx, this.deps);
   }
 
   private prismaAdapter() {
@@ -78,6 +78,12 @@ export class PipelineOrchestrator {
       profile: {
         findFirst: (args: any) => prisma.profile.findFirst(args),
       },
-    }
+      user: {
+        findFirst: (args: any) => prisma.user.findFirst(args),
+      },
+      resume: {
+        findFirst: (args: any) => prisma.resume.findFirst(args),
+      },
+    };
   }
 }
