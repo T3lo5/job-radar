@@ -62,9 +62,17 @@ export class ExtractionStep implements ProcessingStep {
     const allSkills = await ctx.prisma.skill.findMany({});
     const descriptionLower = job.description.toLowerCase();
 
-    const matchedSkills = allSkills.filter((skill: any) =>
-      descriptionLower.includes(skill.name.toLowerCase()),
-    );
+    // Casar por substring puro fazia 'JavaScript' casar com a skill 'Java' e
+    // 'R' casar com qualquer palavra contendo 'r' — poluindo o catálogo de
+    // skills da vaga, que alimenta todo o matching. Agora exige fronteira de
+    // palavra (o \b do regex) e nenhuma skill seria casada -> lista vazia, que
+    // o matcher trata como "sem sinal" em vez de inventar Requirement.
+    const matchedSkills = allSkills.filter((skill: any) => {
+      const name = (skill.name ?? '').toLowerCase().trim();
+      if (name.length < 2) return false;
+      const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(`(?:^|[^a-z0-9+#])${escaped}(?![a-z0-9+#])`, 'i').test(descriptionLower);
+    });
 
     return {
       title: job.title,

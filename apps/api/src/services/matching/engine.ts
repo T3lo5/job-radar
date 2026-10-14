@@ -85,10 +85,15 @@ export function computeMatchScore(
     partialSkills,
     missingSkills,
   );
+  // O cloud roda DEPOIS do score de tecnologias e mutava matched/partial, o que
+  // colocava a mesma skill em duas listas ao mesmo tempo ('Go' aparecia em
+  // partial e em missing) e devolvia skills que não tinham-spanhado o score.
+  // Aqui o cloud só classifica em lista própria, sem tocar nas anteriores.
+  const cloudSkills = job.skills?.map((js) => js.skill) ?? [];
+  const cloudScore = computeCloudDevOpsScore(profile, allSkills, cloudSkills);
   const expScore = computeExperienceScore(profile, matchedSkills.length);
   const seniorityScore = computeSeniorityScore(job, profile);
   const locationScore = computeLocationScore(job, profile);
-  const cloudScore = computeCloudDevOpsScore(job, profile, allSkills, matchedSkills, partialSkills);
   const langScore = computeLanguageScore(job, profile);
   const otherScore = 50;
 
@@ -266,23 +271,24 @@ function computeLocationScore(job: Job, profile: Profile): number {
 }
 
 function computeCloudDevOpsScore(
-  job: JobWithSkills,
   profile: ProfileWithRelations,
   allSkills: Skill[],
-  matched: string[],
-  partial: string[],
+  jobSkills: Skill[],
 ): number {
-  const jobSkills = job.skills?.map((js) => js.skill) ?? [];
   const profileSkillNames = new Set(
     (profile.skills ?? []).map((ps) => normalizeSkillName(ps.skill?.name ?? '')),
   );
 
-  const cloudSkills = jobSkills.filter((skill) =>
-    CLOUD_DEVOPS_KEYWORDS.some(
-      (kw) =>
-        normalizeSkillName(skill.name).includes(kw) || kw.includes(normalizeSkillName(skill.name)),
-    ),
-  );
+  // Comparação por igualdade/prefixo. A versão anterior aceitava `includes`
+  // nos dois sentidos, o que classificava 'Go' como cloud porque
+  // 'google cloud'.includes('go') — e 'R' porque 'terraform'.includes('r').
+  const CLOUD_SET = new Set(CLOUD_DEVOPS_KEYWORDS.map(normalizeSkillName));
+  const cloudSkills = jobSkills.filter((skill) => {
+    const norm = normalizeSkillName(skill.name);
+    if (!norm) return false;
+    if (CLOUD_SET.has(norm)) return true;
+    return [...CLOUD_SET].some((kw) => norm.startsWith(kw));
+  });
 
   if (cloudSkills.length === 0) return 70;
 
@@ -291,12 +297,8 @@ function computeCloudDevOpsScore(
     const normalizedName = normalizeSkillName(skill.name);
     if (profileSkillNames.has(normalizedName)) {
       matchedCount++;
-      if (!matched.includes(skill.name)) matched.push(skill.name);
     } else if (findSynonymMatch(skill, allSkills, profileSkillNames)) {
       matchedCount++;
-      if (!matched.includes(skill.name)) matched.push(skill.name);
-    } else if (!partial.includes(skill.name)) {
-      partial.push(skill.name);
     }
   }
 
@@ -330,14 +332,28 @@ function getRecommendation(score: number): MatchResult['recommendation'] {
   return 'SKIP';
 }
 
+/**
+ * Normaliza o nome de uma skill para comparação.
+ *
+ * O ponto é preservar os símbolos que carregam significado: a versão anterior
+ * removia tudo que não fosse alfanumérico, então 'C++' e 'C#' viravam os dois
+ * 'c' — e um perfil de C# pontuava 100% numa vaga de C++. Também nunca deve
+ * devolver string vazia ('JS' virava ''), que casaria com qualquer outra vazia.
+ */
 function normalizeSkillName(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, '')
+  const lower = name.toLowerCase().trim();
+  if (lower === '') return '';
+
+  const stripped = lower
+    .replace(/^java\s*script$/, 'javascript')
+    .replace(/^react\s*native$/, 'react')
     .replace(/\.js$/, '')
     .replace(/\.ts$/, '')
-    .replace(/js$/, '')
-    .replace(/reactnative$/, 'react');
+    .replace(/[^a-z0-9+#]/g, '');
+
+  // Nunca devolver vazio: a comparação seria por substring com qualquer outra
+  // skill vazia. Usa a forma original como identificador estável.
+  return stripped === '' ? lower.replace(/\s+/g, '') : stripped;
 }
 
 function findSynonymMatch(

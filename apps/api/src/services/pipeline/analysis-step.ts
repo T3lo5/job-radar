@@ -129,8 +129,19 @@ export class AnalysisStep implements ProcessingStep {
       analysis = generateBasicAnalysis(match);
     }
 
+    // Sem match não há profileId, e gravar '' numa coluna com FK para Profile
+    // estoura no banco — a vaga ficava travada em ANALYZING depois de 3
+    // tentativas. Sem match não há o que analisar.
+    if (!match) {
+      await ctx.prisma.job.update({
+        where: { id: ctx.jobId },
+        data: { status: 'DONE' },
+      });
+      return;
+    }
+
     await ctx.prisma.jobAnalysis.upsert({
-      where: { jobId_profileId: { jobId: ctx.jobId, profileId: match?.profileId ?? '' } },
+      where: { jobId_profileId: { jobId: ctx.jobId, profileId: match.profileId } },
       update: {
         summary: analysis.resumo_vaga,
         strengths: analysis.pontos_fortes,
@@ -141,7 +152,7 @@ export class AnalysisStep implements ProcessingStep {
       },
       create: {
         jobId: ctx.jobId,
-        profileId: match?.profileId ?? '',
+        profileId: match.profileId,
         summary: analysis.resumo_vaga,
         strengths: analysis.pontos_fortes,
         gaps: analysis.requisitos_faltantes,

@@ -7,19 +7,51 @@ const DOMPurify = createDOMPurify(window);
 
 export const REMOTE_MODE_PATTERNS: Array<{ values: string[]; mode: RemoteMode }> = [
   {
-    values: ['remote', 'remoto', '100% remoto', 'anywhere', 'worldwide', 'work from home'],
+    values: [
+      'remote',
+      'remoto',
+      'remota',
+      'anywhere',
+      'worldwide',
+      'work from home',
+      'home office',
+      'distributed',
+      'distributed',
+      'teletrabalho',
+    ],
     mode: 'remote',
   },
-  { values: ['hybrid', 'híbrido'], mode: 'hybrid' },
-  { values: ['on-site', 'onsite', 'presencial'], mode: 'on_site' },
+  // Sem acento também: 'hibrido' caía no default e virava on_site.
+  { values: ['hybrid', 'híbrido', 'hibrido', 'semi-presencial'], mode: 'hybrid' },
+  { values: ['on-site', 'onsite', 'on site', 'presencial', 'no local'], mode: 'on_site' },
 ];
 
-export function parseRemoteMode(text: string): RemoteMode {
-  const lower = text.toLowerCase();
-  for (const { values, mode } of REMOTE_MODE_PATTERNS) {
-    if (values.some((v) => lower.includes(v))) return mode;
+/** Remove acentos, para casar "hibrido"/"presencial"/"remoto" sem o acento. */
+function deaccent(value: string): string {
+  return value.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
+export function parseRemoteMode(text: string, tags?: string[]): RemoteMode {
+  // As tags importam: o RemoteOK marca `tags: ['remote']` e costuma mandar
+  // `location` vazio — sem olhar as tags, toda vaga remota dele ficava
+  // 'unknown' e dependia só da descrição.
+  if (tags?.length) {
+    const joined = deaccent(tags.join(' '));
+    for (const { values, mode } of REMOTE_MODE_PATTERNS) {
+      if (values.some((v) => joined.includes(deaccent(v)))) return mode;
+    }
   }
-  if (lower && lower !== 'null' && lower.trim() !== '') return 'on_site';
+
+  const lower = deaccent(text ?? '');
+  if (lower.trim() !== '' && lower !== 'null') {
+    for (const { values, mode } of REMOTE_MODE_PATTERNS) {
+      if (values.some((v) => lower.includes(deaccent(v)))) return mode;
+    }
+  }
+
+  // Sem sinal de modalidade, é 'unknown' — e não 'on_site'. Assumir presencial
+  // inventava informação: o filtro de localização e o matching tratam
+  // 'unknown' como "não sabemos", que é o truthful.
   return 'unknown';
 }
 
@@ -29,15 +61,81 @@ export interface ParsedSalary {
   currency: string | null;
 }
 
+/**
+ * Converte o número de um texto para Number respeitando o separador decimal.
+ *
+ * O bug antigo era `replace(/[,.]/g, '')`, que removia vírgula E ponto: em
+ * "R$ 8.000,00" virava "800000" — inflating o salário em 100x. Agora decides
+ * pelo separador:
+ *   "8.000,00" (pt-BR) -> 8000        "8,000.00" (en)  -> 8000
+ *   "8,000"             -> 8000        "8.000"          -> 8000
+ *   "8.5"               -> 8.5         "50k" -> 50000
+ */
+function parseAmount(raw: string): number {
+  const cleaned = raw.replace(/\s/g, '');
+  const kSuffix = /k$/i.test(cleaned);
+  const digits = cleaned.replace(/k$/i, '');
+
+  const lastComma = digits.lastIndexOf(',');
+  const lastDot = digits.lastIndexOf('.');
+  const commaCount = (digits.match(/,/g) ?? []).length;
+  const dotCount = (digits.match(/\./g) ?? []).length;
+
+  let normalized: string;
+
+  if (commaCount > 0 && dotCount > 0) {
+    // Ambos presentes: o último é o decimal, o resto é milhar.
+    const decimalPos = Math.max(lastComma, lastDot);
+    const intPart = digits.slice(0, decimalPos).replace(/[.,]/g, '');
+    const decPart = digits.slice(decimalPos + 1).replace(/[.,]/g, '');
+    normalized = decPart ? `${intPart}.${decPart}` : intPart;
+  } else if (commaCount === 1 || dotCount === 1) {
+    // Um separador só. É separador de milhar quando exatamente 3 dígitos
+    // vêm depois dele — o padrão de "8.000"/"80,000". Com 1 ou 2 dígitos é
+    // decimal ("12,5"/"12.50").
+    const pos = commaCount === 1 ? lastComma : lastDot;
+    const digitsAfter = digits.length - pos - 1;
+    normalized = digitsAfter === 3 ? digits.replace(/[.,]/g, '') : digits.replace(',', '.');
+  } else if (commaCount > 1 || dotCount > 1) {
+    // Separador repetido é sempre milhar: "1.000.000".
+    normalized = digits.replace(/[.,]/g, '');
+  } else {
+    normalized = digits;
+  }
+
+  const value = Number(normalized);
+  if (!Number.isFinite(value)) return NaN;
+  return kSuffix ? value * 1000 : value;
+}
+
 export function parseSalary(salaryStr?: string): ParsedSalary {
   if (!salaryStr) return { min: null, max: null, currency: null };
 
-  const match = salaryStr.match(/[\$R£€]?\s*([\d.,]+)\s*[-–]\s*[\$R£€]?\s*([\d.,]+)/);
-  if (match) {
-    const min = Number(match[1].replace(/[,.]/g, ''));
-    const max = Number(match[2].replace(/[,.]/g, ''));
-    const currency = detectCurrency(salaryStr);
-    return { min, max, currency };
+  // Faixa: "8.000,00 - 12.000,00", "80k-120k", "45.000 € - 60.000 €".
+  // O símbolo da moeda pode vir antes ou entre os dois números.
+  const rangeMatch = salaryStr.match(
+    /([\d.,]+\s*k?)\s*(?:[\$R£€]+\s*)?(?:[-–—]|\bto\b|\ba\b|\baté\b)\s*(?:[\$R£€]+\s*)?([\d.,]+\s*k?)/i,
+  );
+  if (rangeMatch) {
+    const min = parseAmount(rangeMatch[1]);
+    const max = parseAmount(rangeMatch[2]);
+    if (Number.isFinite(min) && Number.isFinite(max)) {
+      return {
+        min: Math.min(min, max),
+        max: Math.max(min, max),
+        currency: detectCurrency(salaryStr),
+      };
+    }
+  }
+
+  // Valor único: "R$ 10.000", "Salary: $90,000", "90k". Antes era descartado,
+  // o que pierdia a faixa salarial de muitas vagas (comum em Adzuna/Indeed).
+  const singleMatch = salaryStr.match(/[\$R£€]?\s*(\d[\d.,]*\s*k?)/i);
+  if (singleMatch) {
+    const value = parseAmount(singleMatch[1]);
+    if (Number.isFinite(value) && value > 0) {
+      return { min: value, max: null, currency: detectCurrency(salaryStr) };
+    }
   }
 
   return { min: null, max: null, currency: null };
@@ -159,7 +257,9 @@ export function normalizeJobFields(raw: {
     company: raw.company.trim(),
     description: sanitizeHtml(raw.description),
     location: raw.location || null,
-    remote: raw.location ? parseRemoteMode(raw.location) : 'unknown',
+    // Usa location + tags: fontes como RemoteOK marcam a modalidade em
+    // `tags` e mandam `location` vazio.
+    remote: parseRemoteMode(raw.location ?? '', raw.tags),
     salaryMin: raw.salary ? parseSalary(raw.salary).min : null,
     salaryMax: raw.salary ? parseSalary(raw.salary).max : null,
     salaryCurrency: raw.salary ? parseSalary(raw.salary).currency : null,

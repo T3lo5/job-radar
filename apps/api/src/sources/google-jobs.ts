@@ -55,14 +55,17 @@ function parseGoogleJobsHtml(html: string): GoogleJobData[] {
   let match: RegExpExecArray | null;
 
   while ((match = jobPattern.exec(html)) !== null) {
-    const [, title, company, location, description, , url] = match;
-    if (title && company) {
+    // O regex tem 5 grupos. A versão anterior pulava um na desestruturação e
+    // lia match[6], que é sempre undefined — então toda vaga do Google Jobs
+    // entrava com url ''.
+    const [, title, company, location, description, url] = match;
+    if (title && company && url) {
       jobs.push({
         title: decodeHtmlEntities(title),
         company: decodeHtmlEntities(company),
         location: decodeHtmlEntities(location || ''),
         description: decodeHtmlEntities(description || ''),
-        url: url || '',
+        url,
         datePosted: '',
       });
     }
