@@ -36,6 +36,9 @@ coverage/
 # Prisma
 prisma/migrations/dev/
 
+# Client do Prisma gerado (apps/api/src/generated) — gerado pelo `postinstall`
+apps/api/src/generated/
+
 # Uploads locais de CV
 apps/api/uploads/
 

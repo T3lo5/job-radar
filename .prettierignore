@@ -9,3 +9,6 @@ pnpm-lock.yaml
 .husky/
 .scratch/
 storage/
+
+# Artefatos gerados
+apps/api/src/generated/
