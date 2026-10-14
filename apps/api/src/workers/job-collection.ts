@@ -77,12 +77,37 @@ export async function setupCronSchedule(): Promise<void> {
   );
 }
 
-export async function runCollection(): Promise<{
+/**
+ * As três portas que a coleta usa para falar com o mundo de fora.
+ *
+ * Existiam só para isto: sem injeção, `runCollection` importava
+ * `collectFromAllSources` direto e não havia como exercitá-la sem sair para a
+ * rede. A cadeia de testes ia de "vaga já inserida" em diante — justamente a
+ * etapa que ESCREVE no banco ficava sem cobertura.
+ *
+ * O default é a implementação real, então os call sites de produção
+ * (`runCollection()`) não mudam.
+ */
+export interface CollectionDeps {
+  /** Há fonte registrada? Sem nenhuma, a coleta nem começa. */
+  temFontes: () => boolean;
+  /** Busca as vagas em todas as fontes. */
+  coletar: typeof collectFromAllSources;
+  /** Coloca as vagas novas no pipeline. */
+  enfileirar: typeof enqueueJobPipeline;
+}
+
+const depsPadrao: CollectionDeps = {
+  temFontes: () => getAllSources().length > 0,
+  coletar: collectFromAllSources,
+  enfileirar: enqueueJobPipeline,
+};
+
+export async function runCollection(deps: CollectionDeps = depsPadrao): Promise<{
   collected: number;
   errors: string[];
 }> {
-  const sources = getAllSources();
-  if (sources.length === 0) {
+  if (!deps.temFontes()) {
     return { collected: 0, errors: ['No job sources registered'] };
   }
 
@@ -121,7 +146,7 @@ export async function runCollection(): Promise<{
 
     const jobFilter = createJobFilter(profile, { relaxed: layer.relaxed });
 
-    const results = await collectFromAllSources({
+    const results = await deps.coletar({
       keywords: layer.keywords,
       remoteOnly: profile?.remotePreference === 'REMOTE',
     });
@@ -230,7 +255,7 @@ export async function runCollection(): Promise<{
   );
 
   if (allNewJobIds.length > 0) {
-    await enqueueJobPipeline(allNewJobIds);
+    await deps.enfileirar(allNewJobIds);
   }
 
   return { collected, errors };
