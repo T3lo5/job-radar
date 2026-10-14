@@ -4,6 +4,8 @@ Formato inspirado em [Keep a Changelog](https://keepachangelog.com/). Versões e
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-14
+
 ### Adicionado
 
 - Painel de resultado da coleta/processamento (contagem, erros por fonte, cronômetro de progresso)
