@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Dúvida de uso (leia antes)
+    url: https://github.com/T3lo5/job-radar#troubleshooting
+    about: A seção Troubleshooting do README resolve os casos comuns.
+  - name: Vulnerabilidade de segurança (canal privado)
+    url: https://github.com/T3lo5/job-radar/security/advisories/new
+    about: Nunca reporte vulnerabilidade em issue pública. Veja SECURITY.md.

@@ -12,3 +12,7 @@ storage/
 
 # Artefatos gerados
 apps/api/src/generated/
+
+# Templates de issue do GitHub: o corpo inteiro é YAML sensível a indentação.
+# O prettier de markdown refluia o texto e quebrava a estrutura.
+.github/ISSUE_TEMPLATE/
