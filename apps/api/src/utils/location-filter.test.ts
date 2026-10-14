@@ -6,6 +6,18 @@ import { createLocationFilter } from './location-filter.js';
 // Agora a modalidade vem do perfil (profile.remotePreference).
 
 describe('createLocationFilter com modalidade', () => {
+  it('respeita a exclusão por país mesmo em vaga remota', () => {
+    // "Remote - Ukraine" exige morar lá; a modalidade remota não pode
+    // furar a lista de países excluídos.
+    const f = createLocationFilter(null, 'ANY');
+    expect(f.isAllowed('Remote - Ukraine', '', 'remote')).toBe(false);
+    expect(f.isAllowed('Poland - Remote', '', 'remote')).toBe(false);
+    // já o remoto sem paísrestrictionado continua passando
+    expect(f.isAllowed('Remote - Worldwide', '', 'remote')).toBe(true);
+    expect(f.isAllowed('Anywhere', '', 'remote')).toBe(true);
+    expect(f.isAllowed('', 'Fully remote', 'remote')).toBe(true);
+  });
+
   it('aceita vaga remota em qualquer país por padrão', () => {
     for (const pref of [null, 'ANY', 'REMOTE', 'HYBRID']) {
       const f = createLocationFilter(null, pref);

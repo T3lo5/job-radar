@@ -125,16 +125,11 @@ const DEFAULT_EXCLUDED_LOCATIONS = [
   'ecuador',
   'bolivia',
 
-  // Remote with specific non-Brazil locations
-  'remote - worldwide',
-  'remote - global',
-  'remote - any',
-  'remote - us',
-  'remote - usa',
-  'remote - europe',
-  'remote - asia',
-  'worldwide',
-  'global',
+  // Nota: a lista NÃO contém mais entradas como 'remote - worldwide' ou
+  // 'anywhere'. Elas existiam para descartar vagas remotas sem país definido,
+  // o que eliminava justamente o que a maioria das fontes oferece. Hoje a
+  // modalidade remota é decidido por profile.remotePreference, e a lista
+  // guarda apenas países/regiões que exigem autorização de trabalho.
 ];
 
 const EXCLUDED_CITIES = [
@@ -330,9 +325,14 @@ function isLocationAllowed(
 ): boolean {
   const isRemoteJob = remote === 'remote' || remote === 'hybrid';
 
-  // Vaga remota aceita em qualquer país. Chega antes da checagem de local
-  // porque várias fontes devolvem location vazia para vaga remota.
-  if (allowRemote && remote === 'remote') return true;
+  // Vaga remota aceita em qualquer país — mas não em país explicitamente
+  // excluído. Sem esta checagem, "Remote - Ukraine" passaria mesmo para
+  // quem busca vaga no Brasil, porque a modalidade remota pulava a lista.
+  if (allowRemote && remote === 'remote') {
+    const loc = location?.toLowerCase().trim() ?? '';
+    if (loc && excludeLocations.some((excluded) => loc.includes(excluded))) return false;
+    return true;
+  }
 
   // If no location provided, check description for location hints
   if (!location || location.trim() === '') {
