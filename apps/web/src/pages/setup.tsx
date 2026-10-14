@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { setupApi, aiProvidersApi, profileApi } from '../services/api';
+import { setupApi, authApi, aiProvidersApi, profileApi } from '../services/api';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { toast } from '../components/ui/toast';
-import { Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, Lock } from 'lucide-react';
 
 const JOB_TYPE_OPTIONS = [
   'Full Stack',
@@ -31,6 +31,7 @@ export function SetupPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [isCompleting, setIsCompleting] = useState(false);
+  const [isCreatingAccount, setIsCreatingAccount] = useState(false);
 
   const [aiName, setAiName] = useState('BAI');
   const [aiBaseUrl, setAiBaseUrl] = useState('');
@@ -74,6 +75,71 @@ export function SetupPage() {
   const [newJobType, setNewJobType] = useState('');
 
   const [cronExpression, setCronExpression] = useState('0 */6 * * *');
+
+  // Passo 0: criação da conta. Se a conta já existe (ex.: reload no meio do
+  // wizard), começa direto no passo de perfil.
+  const [accountEmail, setAccountEmail] = useState('');
+  const [accountPassword, setAccountPassword] = useState('');
+  const [accountConfirm, setAccountConfirm] = useState('');
+  const [accountCreated, setAccountCreated] = useState(false);
+  const [isCheckingAccount, setIsCheckingAccount] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    void authApi
+      .status()
+      .then((status) => {
+        if (cancelled) return;
+        if (status.accountExists) {
+          setAccountCreated(true);
+          setStep(1);
+        }
+      })
+      .catch(() => {
+        // Sem resposta: segue no passo de conta, que é o único que cria.
+      })
+      .finally(() => {
+        if (!cancelled) setIsCheckingAccount(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleCreateAccount() {
+    if (!accountEmail.trim()) {
+      toast.error('Informe um email');
+      return;
+    }
+    if (accountPassword.length < 8) {
+      toast.error('A senha precisa ter pelo menos 8 caracteres');
+      return;
+    }
+    if (accountPassword !== accountConfirm) {
+      toast.error('As senhas não coincidem');
+      return;
+    }
+
+    setIsCreatingAccount(true);
+    try {
+      await authApi.setup({
+        email: accountEmail.trim(),
+        password: accountPassword,
+        confirmPassword: accountConfirm,
+      });
+      // A resposta já seta o cookie de sessão: o resto do wizard usa ela.
+      setAccountCreated(true);
+      toast.success('Conta criada! Você já está logado.');
+      setStep(1);
+    } catch (err) {
+      const message =
+        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ??
+        'Erro ao criar conta';
+      toast.error(message);
+    } finally {
+      setIsCreatingAccount(false);
+    }
+  }
 
   const addJobType = () => {
     if (!newJobType.trim()) return;
@@ -130,6 +196,7 @@ export function SetupPage() {
   };
 
   const steps = [
+    { title: 'Conta', component: 'account' },
     { title: 'Perfil', component: 'profile' },
     { title: 'IA', component: 'ai' },
     { title: 'Cron', component: 'cron' },
@@ -141,16 +208,22 @@ export function SetupPage() {
       <h1 className="mb-6 text-center text-3xl font-bold">Configuração Inicial</h1>
 
       <div className="mb-4 flex justify-center gap-2">
-        {steps.map((s, i) => (
-          <Button
-            key={s.title}
-            variant={i === step ? 'primary' : 'outline'}
-            size="sm"
-            onClick={() => setStep(i)}
-          >
-            {s.title}
-          </Button>
-        ))}
+        {steps.map((s, i) => {
+          // Passos depois da conta exigem sessão, que só existe após criá-la.
+          const locked = i > 0 && !accountCreated;
+          return (
+            <Button
+              key={s.title}
+              variant={i === step ? 'primary' : 'outline'}
+              size="sm"
+              disabled={locked}
+              title={locked ? 'Crie sua conta primeiro' : undefined}
+              onClick={() => setStep(i)}
+            >
+              {s.title}
+            </Button>
+          );
+        })}
       </div>
 
       <Card>
@@ -159,6 +232,64 @@ export function SetupPage() {
         </CardHeader>
         <CardContent>
           {step === 0 && (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Crie a conta que você vai usar para entrar. A senha é guardada com hash — nem o
+                banco de dados consegue revelá-la. Depois disso você pode acessar de qualquer
+                dispositivo.
+              </p>
+              <div>
+                <label htmlFor="account-email" className="text-sm font-medium">
+                  Email
+                </label>
+                <Input
+                  id="account-email"
+                  type="email"
+                  autoComplete="username"
+                  value={accountEmail}
+                  onChange={(e) => setAccountEmail(e.target.value)}
+                  placeholder="voce@exemplo.com"
+                  className="mt-1"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label htmlFor="account-password" className="text-sm font-medium">
+                  Senha
+                </label>
+                <Input
+                  id="account-password"
+                  type="password"
+                  autoComplete="new-password"
+                  value={accountPassword}
+                  onChange={(e) => setAccountPassword(e.target.value)}
+                  placeholder="Mínimo de 8 caracteres"
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <label htmlFor="account-confirm" className="text-sm font-medium">
+                  Confirme a senha
+                </label>
+                <Input
+                  id="account-confirm"
+                  type="password"
+                  autoComplete="new-password"
+                  value={accountConfirm}
+                  onChange={(e) => setAccountConfirm(e.target.value)}
+                  placeholder="Repita a senha"
+                  className="mt-1"
+                />
+              </div>
+              <p className="flex items-start gap-2 text-xs text-muted-foreground">
+                <Lock className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                Guarde esta senha em algum lugar seguro. Ela protege seus dados e é a única forma de
+                entrar.
+              </p>
+            </div>
+          )}
+
+          {step === 1 && (
             <div className="space-y-4">
               <p className="text-sm text-muted-foreground">
                 Conte um pouco sobre você para personalizar a busca de vagas. Você também pode pular
@@ -235,7 +366,7 @@ export function SetupPage() {
             </div>
           )}
 
-          {step === 1 && (
+          {step === 2 && (
             <div className="space-y-4">
               <p className="text-sm text-muted-foreground">
                 A IA é usada para analisar vagas, otimizar seu CV e gerar resumos. Você pode pular e
@@ -311,7 +442,7 @@ export function SetupPage() {
             </div>
           )}
 
-          {step === 2 && (
+          {step === 3 && (
             <div className="space-y-4">
               <div>
                 <label className="text-sm font-medium">Frequência de Coleta</label>
@@ -325,7 +456,7 @@ export function SetupPage() {
             </div>
           )}
 
-          {step === 3 && (
+          {step === 4 && (
             <div className="space-y-4">
               <p className="text-sm text-muted-foreground">
                 Revise suas configurações e clique em concluir para finalizar.
@@ -366,10 +497,25 @@ export function SetupPage() {
           Voltar
         </Button>
         <div className="flex gap-2">
-          <Button variant="ghost" onClick={handleSkip}>
-            Pular
-          </Button>
-          {step < steps.length - 1 ? (
+          {/* Sem conta não há sessão, então "Pular" no passo 0 criaria um loop
+              infinito com a porteira de auth. */}
+          {step > 0 && (
+            <Button variant="ghost" onClick={handleSkip}>
+              Pular
+            </Button>
+          )}
+          {step === 0 ? (
+            <Button onClick={handleCreateAccount} disabled={isCreatingAccount || isCheckingAccount}>
+              {isCreatingAccount ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Criando...
+                </>
+              ) : (
+                'Criar conta'
+              )}
+            </Button>
+          ) : step < steps.length - 1 ? (
             <Button onClick={() => setStep((s) => s + 1)}>Próximo</Button>
           ) : (
             <Button onClick={handleComplete} disabled={isCompleting}>

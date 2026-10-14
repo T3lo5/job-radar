@@ -3,8 +3,15 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useState, useEffect } from 'react';
-import { Info, Bot, Globe, Clock, Key, ExternalLink } from 'lucide-react';
-import { aiProvidersApi, setupApi, settingsApi, adminApi, type AiProvider } from '../services/api';
+import { Info, Bot, Globe, Clock, Key, ExternalLink, User } from 'lucide-react';
+import {
+  aiProvidersApi,
+  setupApi,
+  settingsApi,
+  adminApi,
+  authApi,
+  type AiProvider,
+} from '../services/api';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -31,7 +38,7 @@ export function SettingsPage() {
 }
 
 function SettingsPageContent() {
-  const [activeTab, setActiveTab] = useState<'ai' | 'sources' | 'cron'>('ai');
+  const [activeTab, setActiveTab] = useState<'ai' | 'sources' | 'cron' | 'account'>('ai');
   const [editingProvider, setEditingProvider] = useState<AiProvider | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [formData, setFormData] = useState({
@@ -199,6 +206,59 @@ function SettingsPageContent() {
     },
   });
 
+  // ── Conta, senha e dispositivos ──────────────────────────────────────────
+  const meQuery = useQuery({ queryKey: ['auth', 'me'], queryFn: () => authApi.me() });
+  const me = meQuery.data;
+
+  const sessionsQuery = useQuery({
+    queryKey: ['auth', 'sessions'],
+    queryFn: () => authApi.sessions(),
+  });
+
+  const revokeSession = useMutation({
+    mutationFn: (id: string) => authApi.revokeSession(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['auth', 'sessions'] });
+      toast.success('Dispositivo desconectado');
+    },
+    onError: () => toast.error('Erro ao desconectar dispositivo'),
+  });
+
+  const changePasswordSchema = z
+    .object({
+      currentPassword: z.string().min(1, 'Informe a senha atual'),
+      newPassword: z.string().min(8, 'Mínimo de 8 caracteres'),
+    })
+    .refine((d) => d.currentPassword !== d.newPassword, {
+      message: 'A nova senha deve ser diferente da atual',
+      path: ['newPassword'],
+    });
+
+  type ChangePasswordData = z.infer<typeof changePasswordSchema>;
+
+  const changePasswordForm = useForm<ChangePasswordData>({
+    resolver: zodResolver(changePasswordSchema),
+    defaultValues: { currentPassword: '', newPassword: '' },
+  });
+
+  const changePasswordMutation = useMutation({
+    mutationFn: (data: ChangePasswordData) => authApi.changePassword(data),
+    onSuccess: () => {
+      changePasswordForm.reset();
+      toast.success('Senha alterada com sucesso');
+    },
+    onError: (error) => {
+      const message =
+        (error as { response?: { data?: { error?: string } } })?.response?.data?.error ??
+        'Erro ao alterar senha';
+      toast.error(message);
+    },
+  });
+
+  const onChangePassword = changePasswordForm.handleSubmit((data) =>
+    changePasswordMutation.mutate(data),
+  );
+
   const cronForm = useForm<CronFormData>({
     resolver: zodResolver(cronSchema),
     defaultValues: {
@@ -335,6 +395,7 @@ function SettingsPageContent() {
     { id: 'ai', label: 'IA', icon: Bot },
     { id: 'sources', label: 'Fontes', icon: Globe },
     { id: 'cron', label: 'Cron', icon: Clock },
+    { id: 'account', label: 'Conta', icon: User },
   ] as const;
 
   return (
@@ -873,6 +934,123 @@ function SettingsPageContent() {
             </form>
           </CardContent>
         </Card>
+      )}
+
+      {activeTab === 'account' && (
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <User className="h-5 w-5" />
+                  Minha conta
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <label className="text-sm font-medium">Email</label>
+                <Input value={me?.user.email ?? '—'} readOnly className="mt-1 bg-surface-2" />
+              </div>
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  try {
+                    await authApi.logout();
+                    window.location.href = '/login';
+                  } catch {
+                    toast.error('Erro ao sair');
+                  }
+                }}
+              >
+                Sair
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Trocar senha</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={onChangePassword} className="space-y-3">
+                <div>
+                  <label htmlFor="current-password" className="text-sm font-medium">
+                    Senha atual
+                  </label>
+                  <Input
+                    id="current-password"
+                    type="password"
+                    autoComplete="current-password"
+                    className="mt-1"
+                    {...changePasswordForm.register('currentPassword')}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="new-password" className="text-sm font-medium">
+                    Nova senha
+                  </label>
+                  <Input
+                    id="new-password"
+                    type="password"
+                    autoComplete="new-password"
+                    className="mt-1"
+                    {...changePasswordForm.register('newPassword')}
+                  />
+                </div>
+                <Button type="submit" disabled={changePasswordMutation.isPending}>
+                  {changePasswordMutation.isPending ? 'Alterando...' : 'Alterar senha'}
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Ao trocar a senha, os outros dispositivos são desconectados. Este continua
+                  conectado.
+                </p>
+              </form>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Dispositivos conectados</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {sessionsQuery.isLoading ? (
+                <p className="text-sm text-muted-foreground">Carregando...</p>
+              ) : (sessionsQuery.data?.sessions ?? []).length === 0 ? (
+                <p className="text-sm text-muted-foreground">Nenhum dispositivo ativo.</p>
+              ) : (
+                (sessionsQuery.data?.sessions ?? []).map((s) => (
+                  <div
+                    key={s.id}
+                    className="flex items-center justify-between gap-3 rounded border border-border bg-surface-2 p-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">
+                        {s.current ? 'Este dispositivo' : s.userAgent || 'Desconhecido'}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Entrou {new Date(s.createdAt).toLocaleDateString('pt-BR')} · último uso{' '}
+                        {new Date(s.lastUsedAt).toLocaleString('pt-BR')}
+                      </p>
+                    </div>
+                    {s.current ? (
+                      <Badge variant="success">atual</Badge>
+                    ) : (
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        onClick={() => revokeSession.mutate(s.id)}
+                        disabled={revokeSession.isPending}
+                      >
+                        Desconectar
+                      </Button>
+                    )}
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </div>
       )}
     </div>
   );

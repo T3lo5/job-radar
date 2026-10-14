@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthGate } from './components/auth-gate';
 import { Layout } from './components/layout';
 import { ToastProvider } from './components/ui/toast';
 import { DashboardPage } from './pages/dashboard';
@@ -11,6 +12,7 @@ import { AnalyticsPage } from './pages/analytics';
 import { SettingsPage } from './pages/settings';
 import { CvOptimizerPage } from './pages/cv-optimizer';
 import { SetupPage } from './pages/setup';
+import { LoginPage } from './pages/login';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -27,8 +29,18 @@ function App() {
       <BrowserRouter>
         <ToastProvider>
           <Routes>
+            {/* Públicas: sem sessão nenhuma */}
+            <Route path="/login" element={<LoginPage />} />
             <Route path="/setup" element={<SetupPage />} />
-            <Route element={<Layout />}>
+
+            {/* Protegidas: exigem sessão válida */}
+            <Route
+              element={
+                <AuthGate>
+                  <Layout />
+                </AuthGate>
+              }
+            >
               <Route path="/" element={<DashboardPage />} />
               <Route path="/profile" element={<ProfilePage />} />
               <Route path="/jobs" element={<JobsPage />} />
@@ -38,6 +50,7 @@ function App() {
               <Route path="/analytics" element={<AnalyticsPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Route>
+
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </ToastProvider>

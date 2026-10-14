@@ -2,7 +2,27 @@ import axios from 'axios';
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:3001',
+  // Necessário para o cookie de sessão (HttpOnly) trafegar. Sem isso o login
+  // "funciona" mas nenhuma request seguinte carrega a sessão.
+  withCredentials: true,
 });
+
+// Sessão expirada ou inválida: manda para o login em vez de deixar a tela
+// quebrada com erro genérico.
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const status = error.response?.status;
+    const isAuthRoute = error.config?.url?.startsWith('/api/auth/');
+    const onLoginPage = window.location.pathname === '/login';
+
+    if ((status === 401 || status === 423) && !isAuthRoute && !onLoginPage) {
+      const needsSetup = error.response?.data?.error === 'setup_required';
+      window.location.href = needsSetup ? '/setup' : '/login';
+    }
+    return Promise.reject(error);
+  },
+);
 
 export interface Profile {
   id: string;
@@ -118,6 +138,49 @@ export interface SettingsByScope {
   scope: string;
   settings: Record<string, string>;
 }
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  name: string | null;
+}
+
+export interface AuthStatus {
+  setupComplete: boolean;
+  accountExists: boolean;
+  needsSetup: boolean;
+}
+
+export interface SessionInfo {
+  id: string;
+  userAgent: string | null;
+  ip: string | null;
+  createdAt: string;
+  lastUsedAt: string;
+  expiresAt: string;
+  current: boolean;
+}
+
+export const authApi = {
+  status: () => api.get<AuthStatus>('/api/auth/status').then((r) => r.data),
+
+  setup: (data: { email: string; password: string; confirmPassword: string }) =>
+    api.post<{ ok: boolean; user: AuthUser }>('/api/auth/setup', data).then((r) => r.data),
+
+  login: (data: { email: string; password: string }) =>
+    api.post<{ ok: boolean; user: AuthUser }>('/api/auth/login', data).then((r) => r.data),
+
+  logout: () => api.post('/api/auth/logout').then((r) => r.data),
+
+  me: () => api.get<{ user: AuthUser; expiresAt: string }>('/api/auth/me').then((r) => r.data),
+
+  sessions: () => api.get<{ sessions: SessionInfo[] }>('/api/auth/sessions').then((r) => r.data),
+
+  revokeSession: (id: string) => api.delete(`/api/auth/sessions/${id}`).then((r) => r.data),
+
+  changePassword: (data: { currentPassword: string; newPassword: string }) =>
+    api.post<{ ok: boolean }>('/api/auth/password', data).then((r) => r.data),
+};
 
 export const profileApi = {
   get: () => api.get<Profile>('/api/profile').then((r) => r.data),
