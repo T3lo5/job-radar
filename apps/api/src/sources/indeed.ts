@@ -3,7 +3,9 @@ import { normalizeJobFields, parseDate, stripHtml } from './normalizer.js';
 import { fetchWithTimeout } from '../utils/http.js';
 
 const INDEED_SEARCH = 'https://www.indeed.com/jobs';
-const INDEED_BRAZIL_SEARCH = 'https://br.indeed.com/vagas';
+// Era `/vagas`, que não existe no Indeed — toda busca Brasil respondia 404.
+// O caminho de busca é `/jobs` em todos os domínios do Indeed.
+const INDEED_BRAZIL_SEARCH = 'https://br.indeed.com/jobs';
 
 interface IndeedJob {
   title: string;
