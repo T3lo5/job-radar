@@ -9,6 +9,14 @@ export interface CvOptimization {
   }>;
   keywordsAdded: string[];
   summary: string;
+  /**
+   * Tecnologias que o modelo afirma ter usado no CV otimizado.
+   *
+   * É o que permite verificar a Regra de Ouro de forma programática: cada item
+   * precisa existir no perfil ou no CV original. Sem este campo, a única defesa
+   * contra invenção seria o próprio pedido no prompt.
+   */
+  skillsClaimed?: string[];
 }
 
 export class CvOptimizer {
@@ -98,6 +106,7 @@ CRITICAL RULES - YOU MUST FOLLOW THESE:
 8. Keep all contact information, dates, and factual data exactly as provided
 9. Reorganize sections to prioritize relevant experience
 10. Use keywords from the job description ONLY if they match the candidate's actual skills/experience
+11. "skillsClaimed" must list EVERY technology you attribute to the candidate in "optimizedText". Never list anything the profile or CV does not support - the answer is verified against the source data before it reaches the user.
 
 Return ONLY valid JSON with this structure:
 {
@@ -106,6 +115,7 @@ Return ONLY valid JSON with this structure:
     {"type": "reorder|rewrite|keyword_add|summary", "section": "section name", "description": "what was changed and why"}
   ],
   "keywordsAdded": ["keyword1", "keyword2"],
+  "skillsClaimed": ["every technology you attribute to the candidate in optimizedText"],
   "summary": "Professional summary tailored to the job using ONLY real candidate data"
 }`,
       },

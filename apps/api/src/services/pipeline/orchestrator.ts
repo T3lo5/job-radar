@@ -10,6 +10,24 @@ export interface PipelineDeps {
   enqueueJob: (name: string, data: Record<string, unknown>) => Promise<void>;
 }
 
+/**
+ * O step já foi aplicado? Cada stage é terminal quando chega no próximo.
+ * O retry do BullMQ reapresenta o mesmo job, e sem esta guarda a IA seria
+ * chamada de novo e paga de novo.
+ */
+function isStepDone(status: string, stepName: string): boolean {
+  switch (stepName) {
+    case 'extract':
+      return status !== 'RAW' && status !== 'EXTRACTING';
+    case 'match':
+      return status === 'ANALYZING' || status === 'DONE';
+    case 'analyze':
+      return status === 'DONE';
+    default:
+      return false;
+  }
+}
+
 export class PipelineOrchestrator {
   private steps: Map<string, ProcessingStep>;
   private deps: StepDependencies;
@@ -48,7 +66,35 @@ export class PipelineOrchestrator {
       prisma: this.prismaAdapter(),
     };
 
-    await step.run(ctx, this.deps);
+    // Idempotência: um step já concluído não roda de novo. Sem isto, recoletar
+    // a mesma vaga e rodar "processar todas" refazia a chamada de IA (custo) e
+    // criava registros duplicados no JobProcessingLog.
+    const job = await prisma.job.findUnique({ where: { id: jobId }, select: { status: true } });
+    if (job && isStepDone(job.status, stepName)) {
+      console.log(`[pipeline] ${stepName} ignorado para ${jobId}: status ${job.status}`);
+      return;
+    }
+
+    try {
+      await step.run(ctx, this.deps);
+    } catch (err) {
+      // Sem isto a vaga ficava travada em EXTRACTING/MATCHING/ANALYZING para
+      // sempre: o job do BullMQ era dado como falho, mas o status no banco
+      // nunca mudava, e o /stats contava "Com erro: 0" sempre.
+      console.error(`[pipeline] step ${stepName} falhou para ${jobId}:`, err);
+      await prisma.job.update({ where: { id: jobId }, data: { status: 'FAILED' } }).catch(() => {});
+      await prisma.jobProcessingLog
+        .create({
+          data: {
+            jobId,
+            toStatus: 'FAILED',
+            message: err instanceof Error ? err.message : String(err),
+          },
+        })
+        .catch(() => {});
+      // Repassa o erro para o retry do BullMQ continuar valendo.
+      throw err;
+    }
   }
 
   private prismaAdapter() {

@@ -57,6 +57,8 @@ export async function cvOptimizerRoutes(app: FastifyInstance) {
           changes: result.changes,
           keywordsAdded: result.keywordsAdded,
           summary: result.summary,
+          // Aviso de integridade (keywords que não existiam nas fontes)
+          warning: result.warning,
         };
       } catch (err) {
         return reply.status(422).send({

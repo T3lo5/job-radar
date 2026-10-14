@@ -37,6 +37,7 @@ export function CvOptimizerPage() {
     changes: Array<{ type: string; section: string; description: string }>;
     keywordsAdded: string[];
     summary: string;
+    warning?: string;
   } | null>(null);
 
   const { data: applicationsData, isLoading: applicationsLoading } = useQuery({
@@ -60,8 +61,15 @@ export function CvOptimizerPage() {
         changes: data.changes,
         keywordsAdded: data.keywordsAdded,
         summary: data.summary,
+        warning: data.warning,
       });
-      toast.success('CV otimizado com sucesso!');
+      // A IA pode sugerir palavra-chave que não consta no perfil. O backend já
+      // remove essas; aqui o usuário fica sabendo que algo foi barrado.
+      if (data.warning) {
+        toast.warning(data.warning);
+      } else {
+        toast.success('CV otimizado com sucesso!');
+      }
     },
     onError: () => toast.error('Erro ao otimizar CV'),
   });
@@ -197,6 +205,15 @@ export function CvOptimizerPage() {
                   ))}
                 </ul>
               </div>
+
+              {optimizedResult.warning && (
+                <div
+                  className="rounded border border-warning/40 bg-warning/10 p-3 text-sm"
+                  role="status"
+                >
+                  <strong>Verificação de integridade:</strong> {optimizedResult.warning}
+                </div>
+              )}
 
               {optimizedResult.keywordsAdded.length > 0 && (
                 <div>

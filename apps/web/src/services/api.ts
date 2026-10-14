@@ -575,6 +575,8 @@ export interface CvOptimizeResponse {
     description: string;
   }>;
   keywordsAdded: string[];
+  /** Aviso de integridade: palavras-chave barradas por não existirem nas fontes. */
+  warning?: string;
   summary: string;
 }
 

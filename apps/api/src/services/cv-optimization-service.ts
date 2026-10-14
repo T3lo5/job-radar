@@ -1,6 +1,7 @@
 import { prisma } from '../db/prisma.js';
 import { CvOptimizer } from './ai/cv-optimizer.js';
 import { createAiClient } from './ai/factory.js';
+import { checkCvIntegrity, fabricationErrorMessage } from './cv-integrity.js';
 
 export interface CvOptimizationRequest {
   resumeId: string;
@@ -19,6 +20,12 @@ export interface CvOptimizationResult {
   }>;
   keywordsAdded: string[];
   summary: string;
+  /**
+   * Aviso de integridade: keywords que a IA declarou mas que não existem no
+   * perfil nem no CV original. Já vêm removidas de `keywordsAdded` — o aviso
+   * existe para o usuário saber que aquilo foi barrado.
+   */
+  warning?: string;
 }
 
 export class CvOptimizationService {
@@ -72,13 +79,27 @@ export class CvOptimizationService {
       profileContext,
     );
 
+    // Regra de Ouro verificada de verdade: o prompt pede, mas quem garante é
+    // esta checagem contra as fontes. Sem ela, um termo inventado pelo modelo
+    // chegaria ao PDF enviado ao recrutador.
+    const integrity = checkCvIntegrity({
+      skillsClaimed: result.skillsClaimed,
+      keywordsAdded: result.keywordsAdded,
+      sources: [resume.rawText, profileContext],
+    });
+
+    if (integrity.fabricatedSkills.length > 0) {
+      throw new Error(fabricationErrorMessage(integrity.fabricatedSkills));
+    }
+
     return {
       resumeId,
       jobId: jobId ?? null,
       optimizedText: result.optimizedText,
       changes: result.changes,
-      keywordsAdded: result.keywordsAdded,
+      keywordsAdded: integrity.keywordsAdded,
       summary: result.summary,
+      warning: integrity.warning,
     };
   }
 

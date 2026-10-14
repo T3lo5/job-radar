@@ -21,22 +21,43 @@ export const processingQueue = new Queue(PROCESSING_QUEUE, {
   },
 });
 
+/**
+ * jobId determinístico por (step, vaga).
+ *
+ * Sem isto, reenfileirar a mesma vaga criava jobs distintos a cada chamada:
+ * recoletar + "processar todas" rodava a IA de novo e de novo pelo mesmo job,
+ * e o retry do BullMQ não reaproveitava nada. Com o id fixo, o BullMQ
+ * deduplica enquanto o job estiver na fila.
+ */
+const pipelineJobId = (name: string, jobId: string) => `${name}:${jobId}`;
+
 export async function enqueueExtraction(jobId: string): Promise<void> {
-  await processingQueue.add(EXTRACTION_JOB, { jobId });
+  await processingQueue.add(
+    EXTRACTION_JOB,
+    { jobId },
+    { jobId: pipelineJobId(EXTRACTION_JOB, jobId) },
+  );
 }
 
 export async function enqueueMatching(jobId: string): Promise<void> {
-  await processingQueue.add(MATCHING_JOB, { jobId });
+  await processingQueue.add(MATCHING_JOB, { jobId }, { jobId: pipelineJobId(MATCHING_JOB, jobId) });
 }
 
 export async function enqueueAnalysis(jobId: string): Promise<void> {
-  await processingQueue.add(ANALYSIS_JOB, { jobId });
+  await processingQueue.add(ANALYSIS_JOB, { jobId }, { jobId: pipelineJobId(ANALYSIS_JOB, jobId) });
 }
 
 export async function enqueueJobPipeline(jobIds: string[]): Promise<void> {
-  for (const jobId of jobIds) {
-    await processingQueue.add(EXTRACTION_JOB, { jobId });
-  }
+  if (jobIds.length === 0) return;
+  // addBulk faz N inserts num comando só; o add em loop fazia um round-trip do
+  // Redis por vaga.
+  await processingQueue.addBulk(
+    jobIds.map((jobId) => ({
+      name: EXTRACTION_JOB,
+      data: { jobId },
+      opts: { jobId: pipelineJobId(EXTRACTION_JOB, jobId) },
+    })),
+  );
 }
 
 const orchestrator = new PipelineOrchestrator({
