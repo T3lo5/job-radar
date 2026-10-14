@@ -6,20 +6,40 @@ import { generatePdf } from '../services/pdf-generator.js';
 export async function pdfExportRoutes(app: FastifyInstance) {
   // POST /api/cv/export-pdf — export optimized CV as PDF
   app.post<{
-    Body: { resumeId: string; jobId: string; optimizedText?: string };
+    Body: { resumeId?: string; jobId?: string; optimizedText?: string };
   }>(
     '/api/cv/export-pdf',
     {
       schema: {
         body: z.object({
-          resumeId: z.string().cuid(),
-          jobId: z.string().cuid(),
+          // nullish (optional + nullable) para não repetir a fragilidade que
+          // quebrou a feature: a UI manda `undefined` em modo manual, e um
+          // contrato rígido transformaria isso em 400.
+          resumeId: z.string().cuid().nullish(),
+          jobId: z.string().cuid().nullish(),
           optimizedText: z.string().optional(),
         }),
       },
     },
     async (request, reply) => {
-      const { resumeId, jobId, optimizedText } = request.body;
+      const { optimizedText } = request.body;
+      let { resumeId, jobId } = request.body;
+
+      // Espelha a resolucao de /api/cv/optimize: sem resumeId explicito, usa a
+      // default (ou a mais recente). Antes o schema exigia cuid e a UI mandava a
+      // literal 'default', que era rejeitada com 400.
+      if (!resumeId) {
+        resumeId = (
+          await prisma.resume.findFirst({
+            where: { isDefault: true },
+            orderBy: { createdAt: 'desc' },
+          })
+        )?.id;
+      }
+
+      if (!resumeId) {
+        return reply.status(404).send({ error: 'No resume found. Please upload a CV first.' });
+      }
 
       const resume = await prisma.resume.findUnique({
         where: { id: resumeId },

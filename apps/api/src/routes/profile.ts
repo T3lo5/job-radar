@@ -42,8 +42,11 @@ const educationSchema = z.object({
   degree: z.string().min(1).max(200),
   field: z.string().min(1).max(200),
   institution: z.string().min(1).max(200),
-  startDate: z.string().nullable().optional(),
-  endDate: z.string().nullable().optional(),
+  // coerce.date() como em workExperienceSchema/certificationSchema: assim uma
+  // string vazia ('' vira Date inválido) é rejeitada na validação, em vez de
+  // estourar no Prisma ao gravar num campo DateTime.
+  startDate: z.coerce.date().nullable().optional(),
+  endDate: z.coerce.date().nullable().optional(),
 });
 
 const languageSchema = z.object({
@@ -89,6 +92,7 @@ export async function profileRoutes(app: FastifyInstance) {
         certifications: true,
         projects: true,
         languages: true,
+        workExperiences: true,
       },
     });
 
@@ -124,6 +128,7 @@ export async function profileRoutes(app: FastifyInstance) {
           certifications: true,
           projects: true,
           languages: true,
+          workExperiences: true,
         },
       });
       return reply.status(201).send(created);
@@ -144,6 +149,7 @@ export async function profileRoutes(app: FastifyInstance) {
         certifications: true,
         projects: true,
         languages: true,
+        workExperiences: true,
       },
     });
 
@@ -222,6 +228,7 @@ export async function profileRoutes(app: FastifyInstance) {
           certifications: true,
           projects: true,
           languages: true,
+          workExperiences: true,
         },
       });
 
