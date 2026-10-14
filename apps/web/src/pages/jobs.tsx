@@ -17,7 +17,7 @@ import { JobsSkeleton } from '../components/skeletons/jobs-skeleton';
 import { EmptyState } from '../components/empty-state';
 import { ErrorBoundary } from '../components/error-boundary';
 import { toast } from '../components/ui/toast';
-import { REMOTE_MODE_LABELS, SENIORITY_LABELS } from '@job-radar/shared';
+import { REMOTE_MODE_LABELS, seniorityLabel } from '@job-radar/shared';
 import { SENIORITY_COLORS } from '../lib/colors';
 import { Badge } from '../components/ui/badge';
 import { Briefcase, ChevronLeft } from 'lucide-react';
@@ -330,7 +330,7 @@ function JobCard({
                 <Badge
                   className={`${SENIORITY_COLORS[job.seniority]?.bg ?? 'bg-surface-2'} ${SENIORITY_COLORS[job.seniority]?.text ?? 'text-muted-foreground'}`}
                 >
-                  {SENIORITY_LABELS[job.seniority]?.label ?? job.seniority}
+                  {seniorityLabel(job.seniority)}
                 </Badge>
               )}
               {job.salaryMin && job.salaryMax && (
