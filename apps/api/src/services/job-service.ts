@@ -260,10 +260,6 @@ export class JobService {
     });
   }
 
-  async getAllSkills() {
-    return prisma.skill.findMany();
-  }
-
   async upsertMatch(
     jobId: string,
     profileId: string,

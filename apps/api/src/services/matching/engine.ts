@@ -78,19 +78,21 @@ interface ProfileWithRelations extends Profile {
   languages?: ProfileLanguage[];
 }
 
-export function computeMatchScore(
-  job: JobWithSkills,
-  profile: ProfileWithRelations,
-  allSkills: Skill[] = [],
-): MatchResult {
+export function computeMatchScore(job: JobWithSkills, profile: ProfileWithRelations): MatchResult {
   const matchedSkills: string[] = [];
   const partialSkills: string[] = [];
   const missingSkills: string[] = [];
 
+  // Só estas skills podem produzir um match sinônimo — ver
+  // `collectRelevantSkills`. Trazer o catálogo inteiro para cá custava uma
+  // query por vaga no pipeline e uma por requisição em /api/match/evaluate,
+  // para varrer linhas que iam ser descartadas uma a uma.
+  const relevantSkills = collectRelevantSkills(job, profile);
+
   const techScore = computeTechnologiesScore(
     job,
     profile,
-    allSkills,
+    relevantSkills,
     matchedSkills,
     partialSkills,
     missingSkills,
@@ -100,7 +102,7 @@ export function computeMatchScore(
   // partial e em missing) e devolvia skills que não tinham-spanhado o score.
   // Aqui o cloud só classifica em lista própria, sem tocar nas anteriores.
   const cloudSkills = job.skills?.map((js) => js.skill) ?? [];
-  const cloudScore = computeCloudDevOpsScore(profile, allSkills, cloudSkills);
+  const cloudScore = computeCloudDevOpsScore(profile, relevantSkills, cloudSkills);
   const expScore = computeExperienceScore(profile, matchedSkills.length);
   const seniorityScore = computeSeniorityScore(job, profile);
   const locationScore = computeLocationScore(job, profile);
@@ -137,7 +139,7 @@ export function computeMatchScore(
 function computeTechnologiesScore(
   job: JobWithSkills,
   profile: ProfileWithRelations,
-  allSkills: Skill[],
+  relevantSkills: Skill[],
   matched: string[],
   partial: string[],
   missing: string[],
@@ -162,7 +164,7 @@ function computeTechnologiesScore(
       continue;
     }
 
-    if (findSynonymMatch(jobSkill, allSkills, profileSkillNames)) {
+    if (findSynonymMatch(jobSkill, relevantSkills, profileSkillNames)) {
       earnedWeight += 1;
       matched.push(jobSkill.name);
       continue;
@@ -280,7 +282,7 @@ function computeLocationScore(job: Job, profile: Profile): number {
 
 function computeCloudDevOpsScore(
   profile: ProfileWithRelations,
-  allSkills: Skill[],
+  relevantSkills: Skill[],
   jobSkills: Skill[],
 ): number {
   const profileSkillNames = new Set(
@@ -305,7 +307,7 @@ function computeCloudDevOpsScore(
     const normalizedName = normalizeSkillName(skill.name);
     if (profileSkillNames.has(normalizedName)) {
       matchedCount++;
-    } else if (findSynonymMatch(skill, allSkills, profileSkillNames)) {
+    } else if (findSynonymMatch(skill, relevantSkills, profileSkillNames)) {
       matchedCount++;
     }
   }
@@ -364,19 +366,49 @@ function normalizeSkillName(name: string): string {
   return stripped === '' ? lower.replace(/\s+/g, '') : stripped;
 }
 
+/**
+ * Conjunto mínimo que pode gerar match sinônimo.
+ *
+ * `findSynonymMatch` só produz resposta a partir de duas coisas: os aliases da
+ * própria skill da vaga, e os aliases das skills do perfil. Qualquer outra linha
+ * do catálogo é percorrida e descartada — e como o filtro é
+ * `profileSkillNames.has(...)`, ela nem chega a ter os aliases lidos.
+ *
+ * Por isso o recorte é UNION das skills da vaga com as do perfil, e não só as
+ * do perfil: sem a skill da vaga na lista, `findSynonymMatch` não a encontraria
+ * por id e devolveria falso em silencio, perdendo o match que ela mesma faria.
+ *
+ * Única premissa: os aliases vêm da cópia que veio na query da vaga, não de uma
+ * segunda leitura do catálogo. São a mesma linha do banco — `include: { skill:
+ * true }` carrega uma vez — então os aliases são idênticos. Só divergiriam se
+ * alguém montasse dois objetos com o mesmo id e aliases diferentes, que é
+ * justamente o que um teste ingênuo faz, produzindo uma "divergência" que não
+ * existe em produção.
+ */
+function collectRelevantSkills(job: JobWithSkills, profile: ProfileWithRelations): Skill[] {
+  const porId = new Map<string, Skill>();
+  for (const { skill } of job.skills ?? []) {
+    if (skill?.id) porId.set(skill.id, skill);
+  }
+  for (const { skill } of profile.skills ?? []) {
+    if (skill?.id) porId.set(skill.id, skill);
+  }
+  return [...porId.values()];
+}
+
 function findSynonymMatch(
   targetSkill: Skill,
-  allSkills: Skill[],
+  relevantSkills: Skill[],
   profileSkillNames: Set<string>,
 ): boolean {
-  const target = allSkills.find((s) => s.id === targetSkill.id);
+  const target = relevantSkills.find((s) => s.id === targetSkill.id);
   if (!target) return false;
 
   for (const alias of target.aliases) {
     if (profileSkillNames.has(normalizeSkillName(alias))) return true;
   }
 
-  for (const skill of allSkills) {
+  for (const skill of relevantSkills) {
     if (profileSkillNames.has(normalizeSkillName(skill.name))) {
       if (
         skill.aliases.some((a) => normalizeSkillName(a) === normalizeSkillName(targetSkill.name))

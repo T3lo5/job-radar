@@ -131,10 +131,11 @@ export async function jobsRoutes(app: FastifyInstance) {
   app.post('/api/match/evaluate', { schema: { body: matchJobSchema } }, async (request, reply) => {
     const { jobId } = request.body as z.infer<typeof matchJobSchema>;
 
-    const [job, profile, allSkills] = await Promise.all([
+    // Antes eram três queries em paralelo, uma delas o catálogo inteiro de
+    // skills — por requisição HTTP. O motor não precisa dele.
+    const [job, profile] = await Promise.all([
       jobService.getJobWithSkills(jobId),
       jobService.getProfileWithSkills(),
-      jobService.getAllSkills(),
     ]);
 
     if (!job) {
@@ -144,7 +145,7 @@ export async function jobsRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: 'Profile not found' });
     }
 
-    const result = computeMatchScore(job, profile, allSkills);
+    const result = computeMatchScore(job, profile);
 
     await jobService.upsertMatch(job.id, profile.id, result);
 

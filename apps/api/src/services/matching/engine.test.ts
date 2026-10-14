@@ -83,11 +83,7 @@ describe('computeMatchScore', () => {
   const react = createSkill('1', 'React');
   const typescript = createSkill('2', 'TypeScript');
   const node = createSkill('3', 'Node.js');
-  const aws = createSkill('4', 'AWS');
-  const docker = createSkill('5', 'Docker');
   const python = createSkill('6', 'Python');
-
-  const allSkills = [react, typescript, node, aws, docker, python];
 
   it('returns 100 for perfect match (all skills match)', () => {
     const job = createJob({}, [
@@ -101,7 +97,7 @@ describe('computeMatchScore', () => {
       createProfileSkill(node, 4),
     ]);
 
-    const result = computeMatchScore(job, profile, allSkills);
+    const result = computeMatchScore(job, profile);
     expect(result.score).toBeGreaterThan(85);
     expect(result.matchedSkills).toContain('React');
     expect(result.matchedSkills).toContain('TypeScript');
@@ -119,7 +115,7 @@ describe('computeMatchScore', () => {
       createProfileSkill(typescript, 2),
     ]);
 
-    const result = computeMatchScore(job, profile, allSkills);
+    const result = computeMatchScore(job, profile);
     expect(result.score).toBeGreaterThan(40);
     expect(result.score).toBeLessThan(85);
     expect(result.matchedSkills).toContain('React');
@@ -130,7 +126,7 @@ describe('computeMatchScore', () => {
     const job = createJob({}, [{ skill: python, required: true }]);
     const profile = createProfile({}, [createProfileSkill(react, 5)]);
 
-    const result = computeMatchScore(job, profile, allSkills);
+    const result = computeMatchScore(job, profile);
     expect(result.score).toBeGreaterThan(0);
     expect(result.score).toBeLessThan(70);
     expect(result.missingSkills).toContain('Python');
@@ -141,19 +137,19 @@ describe('computeMatchScore', () => {
     const job = createJob({}, [{ skill: reactjs, required: true }]);
     const profile = createProfile({}, [createProfileSkill(react, 3)]);
 
-    const result = computeMatchScore(job, profile, [...allSkills, reactjs]);
+    const result = computeMatchScore(job, profile);
     expect(result.matchedSkills).toContain('React.js');
   });
 
   it('never marks unmatched skill as matched', () => {
-    const aws = createSkill('10', 'AWS');
+    const aws = createSkill('4', 'AWS');
     const job = createJob({}, [
       { skill: aws, required: true },
       { skill: python, required: true },
     ]);
     const profile = createProfile({}, [createProfileSkill(react, 5)]);
 
-    const result = computeMatchScore(job, profile, [...allSkills, aws]);
+    const result = computeMatchScore(job, profile);
     expect(result.matchedSkills).not.toContain('AWS');
     expect(result.matchedSkills).not.toContain('Python');
     expect(result.missingSkills).toContain('AWS');
@@ -165,8 +161,8 @@ describe('computeMatchScore', () => {
     const juniorProfile = createProfile({ seniority: 'JUNIOR' });
     const seniorProfile = createProfile({ seniority: 'SENIOR' });
 
-    const juniorResult = computeMatchScore(job, juniorProfile, allSkills);
-    const seniorResult = computeMatchScore(job, seniorProfile, allSkills);
+    const juniorResult = computeMatchScore(job, juniorProfile);
+    const seniorResult = computeMatchScore(job, seniorProfile);
 
     expect(juniorResult.breakdown.seniority).toBeLessThan(seniorResult.breakdown.seniority);
   });
@@ -176,8 +172,8 @@ describe('computeMatchScore', () => {
     const onSiteJob = createJob({ remote: 'ON_SITE', location: 'New York' });
     const spProfile = createProfile({ location: 'São Paulo, Brazil' });
 
-    const remoteResult = computeMatchScore(remoteJob, spProfile, allSkills);
-    const onSiteResult = computeMatchScore(onSiteJob, spProfile, allSkills);
+    const remoteResult = computeMatchScore(remoteJob, spProfile);
+    const onSiteResult = computeMatchScore(onSiteJob, spProfile);
 
     expect(remoteResult.breakdown.location).toBeGreaterThan(onSiteResult.breakdown.location);
   });
@@ -186,7 +182,7 @@ describe('computeMatchScore', () => {
     const job = createJob({}, [{ skill: react, required: true }]);
     const profile = createProfile({}, [createProfileSkill(react, 10)]);
 
-    const result = computeMatchScore(job, profile, allSkills);
+    const result = computeMatchScore(job, profile);
     expect(['STRONG_APPLY', 'APPLY']).toContain(result.recommendation);
   });
 
@@ -194,7 +190,7 @@ describe('computeMatchScore', () => {
     const job = createJob({}, [{ skill: python, required: true }]);
     const juniorProfile = createProfile({ seniority: 'JUNIOR' }, [createProfileSkill(react, 1)]);
 
-    const result = computeMatchScore(job, juniorProfile, allSkills);
+    const result = computeMatchScore(job, juniorProfile);
     expect(['CONSIDER', 'SKIP']).toContain(result.recommendation);
   });
 });

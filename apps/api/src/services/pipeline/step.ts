@@ -46,7 +46,7 @@ import type { MatchResult } from '../matching/engine.js';
 export interface StepDependencies {
   createJobExtractor: () => Promise<JobExtractor>;
   createJobAnalyzer: () => Promise<JobAnalyzer>;
-  computeMatchScore: (job: any, profile: any, allSkills: any[]) => MatchResult;
+  computeMatchScore: (job: any, profile: any) => MatchResult;
   enqueueNext: (jobId: string, stepName: string) => Promise<void>;
 }
 

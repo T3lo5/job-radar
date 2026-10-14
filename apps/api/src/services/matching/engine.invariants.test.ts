@@ -41,7 +41,7 @@ const profile = (skills: string[]) =>
   }) as never;
 
 const score = (jobSkills: string[], profileSkills: string[]) =>
-  computeMatchScore(job(jobSkills), profile(profileSkills), []);
+  computeMatchScore(job(jobSkills), profile(profileSkills));
 
 describe('normalização de skills', () => {
   it('não confunde C++ com C#', () => {

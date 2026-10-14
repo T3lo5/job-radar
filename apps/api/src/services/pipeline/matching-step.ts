@@ -26,8 +26,11 @@ export class MatchingStep implements ProcessingStep {
       return;
     }
 
-    const allSkills = await ctx.prisma.skill.findMany({});
-    const result = deps.computeMatchScore(job, profile, allSkills);
+    // Sem `skill.findMany({})`: o motor deriva sozinho o conjunto de skills que
+    // pode gerar match sinônimo (union das da vaga e das do perfil). Ler o
+    // catálogo inteiro aqui era uma query por vaga na fila, para varrer linhas
+    // que o motor descartaria uma a uma.
+    const result = deps.computeMatchScore(job, profile);
 
     await ctx.prisma.jobMatch.upsert({
       where: { jobId_profileId: { jobId: ctx.jobId, profileId: profile.id } },

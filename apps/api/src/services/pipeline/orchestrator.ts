@@ -45,8 +45,7 @@ export class PipelineOrchestrator {
     this.deps = {
       createJobExtractor: () => createJobExtractor(),
       createJobAnalyzer: () => createJobAnalyzer(),
-      computeMatchScore: (job: any, profile: any, allSkills: any[]): MatchResult =>
-        computeMatchScore(job, profile, allSkills),
+      computeMatchScore: (job: any, profile: any): MatchResult => computeMatchScore(job, profile),
       enqueueNext: async (jobId: string, stepName: string) => {
         const jobName = stepName === 'match' ? 'match-job' : 'analyze-job';
         await this.enqueueJob(jobName, { jobId });
