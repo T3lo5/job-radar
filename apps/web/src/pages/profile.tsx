@@ -23,6 +23,9 @@ import { handleApiError } from '../services/error-handler';
 import { cn } from '../lib/utils/cn';
 import { REMOTE_MODE_LABELS } from '@job-radar/shared';
 import { initialSeniorityList, displaySeniority, syncedSeniority } from '../lib/seniority';
+import { parseSalaryInput, formatSalary } from '../lib/salary';
+
+const salaryField = z.preprocess(parseSalaryInput, z.number().int().min(0).optional());
 
 const profileSchema = z.object({
   title: z.string().max(200).optional(),
@@ -32,8 +35,8 @@ const profileSchema = z.object({
     .optional(),
   location: z.string().max(200).optional(),
   remotePreference: z.enum(['ON_SITE', 'HYBRID', 'REMOTE', 'ANY']).optional(),
-  salaryMin: z.coerce.number().int().min(0).optional(),
-  salaryMax: z.coerce.number().int().min(0).optional(),
+  salaryMin: salaryField,
+  salaryMax: salaryField,
   salaryCurrency: z.string().length(3).optional(),
   summary: z.string().max(5000).optional(),
   jobTypes: z.array(z.string()).optional(),
@@ -577,10 +580,13 @@ export function ProfilePage() {
 
       const updates: Promise<any>[] = [];
 
-      if (data.title) {
+      // Só preenche o que está vazio. Antes sobrescrevia title e summary mesmo
+      // quando o usuário já tinha curado os dois à mão — "aplicar" virava
+      // "perder o que eu escrevi".
+      if (data.title && !currentProfile.title?.trim()) {
         updates.push(profileApi.update({ title: data.title }));
       }
-      if (data.summary) {
+      if (data.summary && !currentProfile.summary?.trim()) {
         updates.push(profileApi.update({ summary: data.summary }));
       }
 
@@ -642,6 +648,33 @@ export function ProfilePage() {
   const watchedSeniority = profileForm.watch('seniorityList');
   const watchedJobTypes = profileForm.watch('jobTypes');
   const watchedDiscardTerms = profileForm.watch('discardTerms');
+
+  // Mesmo padrão do educationPayload: `<Input type="date">` vazio manda '',
+  // e mandar '' cru faz o PUT responder 400 (Data Inválida). Atingia justo as
+  // experiências importadas do CV, que vêm sem datas.
+  const workExperiencePayload = () => ({
+    company: workExperienceForm.company,
+    role: workExperienceForm.role,
+    description: workExperienceForm.description || null,
+    startDate: workExperienceForm.startDate || null,
+    endDate: workExperienceForm.current ? null : workExperienceForm.endDate || null,
+    current: workExperienceForm.current,
+    skills: workExperienceForm.skills
+      ? workExperienceForm.skills
+          .split(',')
+          .map((sk) => sk.trim())
+          .filter(Boolean)
+      : [],
+  });
+
+  const certificationPayload = () => ({
+    ...certificationForm,
+    issuer: certificationForm.issuer || null,
+    issuedAt: certificationForm.issuedAt || null,
+    expiresAt: certificationForm.expiresAt || null,
+    credentialId: certificationForm.credentialId || null,
+    url: certificationForm.url || null,
+  });
 
   const toggleSeniority = (
     value: 'INTERN' | 'JUNIOR' | 'MID' | 'SENIOR' | 'SPECIALIST' | 'LEAD',
@@ -804,8 +837,8 @@ export function ProfilePage() {
                   <InfoRow
                     label="Salário"
                     value={
-                      profile.salaryMin && profile.salaryMax
-                        ? `${profile.salaryMin} - ${profile.salaryMax} ${profile.salaryCurrency}`
+                      profile.salaryMin != null && profile.salaryMax != null
+                        ? `${formatSalary(profile.salaryMin)} - ${formatSalary(profile.salaryMax)} ${profile.salaryCurrency ?? ''}`.trim()
                         : null
                     }
                   />
@@ -1354,7 +1387,7 @@ export function ProfilePage() {
                     </div>
                     <Button
                       size="sm"
-                      onClick={() => addCertification.mutate(certificationForm)}
+                      onClick={() => addCertification.mutate(certificationPayload())}
                       disabled={!certificationForm.name.trim() || addCertification.isPending}
                     >
                       {addCertification.isPending ? 'Adicionando...' : 'Adicionar'}
@@ -1389,7 +1422,10 @@ export function ProfilePage() {
                         <div className="flex gap-2">
                           <button
                             onClick={() =>
-                              updateCertification.mutate({ id: cert.id, data: certificationForm })
+                              updateCertification.mutate({
+                                id: cert.id,
+                                data: certificationPayload(),
+                              })
                             }
                             className="text-success text-sm"
                           >
@@ -1777,24 +1813,7 @@ export function ProfilePage() {
                     </div>
                     <Button
                       size="sm"
-                      onClick={() =>
-                        addWorkExperience.mutate({
-                          company: workExperienceForm.company,
-                          role: workExperienceForm.role,
-                          description: workExperienceForm.description || null,
-                          startDate: workExperienceForm.startDate || null,
-                          endDate: workExperienceForm.current
-                            ? null
-                            : workExperienceForm.endDate || null,
-                          current: workExperienceForm.current,
-                          skills: workExperienceForm.skills
-                            ? workExperienceForm.skills
-                                .split(',')
-                                .map((s) => s.trim())
-                                .filter(Boolean)
-                            : [],
-                        })
-                      }
+                      onClick={() => addWorkExperience.mutate(workExperiencePayload())}
                       disabled={
                         !workExperienceForm.company.trim() ||
                         !workExperienceForm.role.trim() ||
@@ -1850,15 +1869,7 @@ export function ProfilePage() {
                             onClick={() =>
                               updateWorkExperience.mutate({
                                 id: exp.id,
-                                data: {
-                                  ...workExperienceForm,
-                                  skills: workExperienceForm.skills
-                                    ? workExperienceForm.skills
-                                        .split(',')
-                                        .map((s) => s.trim())
-                                        .filter(Boolean)
-                                    : [],
-                                },
+                                data: workExperiencePayload(),
                               })
                             }
                             className="text-success text-sm"

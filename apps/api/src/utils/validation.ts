@@ -51,3 +51,20 @@ export function httpUrl(maxLength?: number) {
       return true;
     }, 'URL aponta para um endereço link-local não permitido');
 }
+
+/**
+ * Data opcional que aceita string vazia como "sem data".
+ *
+ * Todo `<Input type="date">` vazio manda `''`, e `z.coerce.date()` transforma
+ * `''` em Data Inválida — o PUT respondia 400 e a edição "não salvava".
+ * Atingia justo os registros importados do CV (sem datas): abrir a edição e
+ * salvar, sem tocar em nada, já falhava.
+ *
+ * `''` vira `undefined` (campo intocado no PUT), e não `null`: com `null`, um
+ * cliente que simplesmente omitisse a data apagaria a data gravada sem querer.
+ * `null` explícito continua significando "limpar".
+ */
+export const dataOpcional = z.preprocess(
+  (v) => (v === '' ? undefined : v),
+  z.coerce.date().nullable().optional(),
+);

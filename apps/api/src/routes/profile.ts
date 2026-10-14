@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db/prisma.js';
-import { httpUrl } from '../utils/validation.js';
+import { httpUrl, dataOpcional } from '../utils/validation.js';
 
 const skillLevelSchema = z.enum(['BEGINNER', 'INTERMEDIATE', 'ADVANCED', 'EXPERT']);
 const senioritySchema = z.enum(['INTERN', 'JUNIOR', 'MID', 'SENIOR', 'SPECIALIST', 'LEAD']);
@@ -43,11 +43,8 @@ const educationSchema = z.object({
   degree: z.string().min(1).max(200),
   field: z.string().min(1).max(200),
   institution: z.string().min(1).max(200),
-  // coerce.date() como em workExperienceSchema/certificationSchema: assim uma
-  // string vazia ('' vira Date inválido) é rejeitada na validação, em vez de
-  // estourar no Prisma ao gravar num campo DateTime.
-  startDate: z.coerce.date().nullable().optional(),
-  endDate: z.coerce.date().nullable().optional(),
+  startDate: dataOpcional,
+  endDate: dataOpcional,
 });
 
 const languageSchema = z.object({
@@ -58,8 +55,8 @@ const languageSchema = z.object({
 const certificationSchema = z.object({
   name: z.string().min(1).max(200),
   issuer: z.string().max(200).nullable().optional(),
-  issuedAt: z.coerce.date().nullable().optional(),
-  expiresAt: z.coerce.date().nullable().optional(),
+  issuedAt: dataOpcional,
+  expiresAt: dataOpcional,
   credentialId: z.string().max(200).nullable().optional(),
   url: httpUrl(500).nullable().optional(),
 });
@@ -75,8 +72,8 @@ const workExperienceSchema = z.object({
   company: z.string().min(1).max(200),
   role: z.string().min(1).max(200),
   description: z.string().max(5000).nullable().optional(),
-  startDate: z.coerce.date().nullable().optional(),
-  endDate: z.coerce.date().nullable().optional(),
+  startDate: dataOpcional,
+  endDate: dataOpcional,
   current: z.boolean().default(false),
   skills: z.array(z.string()).max(20).optional(),
 });
@@ -165,23 +162,29 @@ export async function profileRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: 'Profile not found' });
     }
 
-    const skill = await prisma.skill.upsert({
-      where: { name: skillName },
-      update: {},
-      create: { name: skillName, aliases: [], category: null },
-    });
+    // Busca case-insensitive antes de criar. O `upsert` pelo nome exato
+    // criava 'react' ao lado do 'React' que já existia — o unique do Postgres
+    // compara com caixa — e o perfil passava a listar a mesma skill duas
+    // vezes. (Mesma classe do bug que o skill-resolver trata na extração.)
+    const existente =
+      (await prisma.skill.findFirst({
+        where: { name: { equals: skillName.trim(), mode: 'insensitive' } },
+      })) ??
+      (await prisma.skill.create({
+        data: { name: skillName.trim(), aliases: [], category: null },
+      }));
 
     const profileSkill = await prisma.profileSkill.upsert({
       where: {
         profileId_skillId: {
           profileId: profile.id,
-          skillId: skill.id,
+          skillId: existente.id,
         },
       },
       update: { level, yearsExp },
       create: {
         profileId: profile.id,
-        skillId: skill.id,
+        skillId: existente.id,
         level,
         yearsExp,
       },
