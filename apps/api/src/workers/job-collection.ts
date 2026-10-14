@@ -5,6 +5,7 @@ import { collectFromAllSources, getAllSources } from '../sources/index.js';
 import { settingsService } from '../services/settings-service.js';
 import { sendDailyReport } from '../services/daily-report.js';
 import { enqueueJobPipeline } from './processing.js';
+import { persistSourceJobs, type JobCandidate } from './job-persistence.js';
 import { detectSeniority } from '../utils/seniority.js';
 import { createLocationFilter } from '../utils/location-filter.js';
 import { createJobFilter } from '../utils/job-filter.js';
@@ -38,6 +39,22 @@ export const jobCollectionQueue = new Queue(QUEUE_NAME, {
     removeOnFail: 50,
   },
 });
+
+/**
+ * Resolve (ou cria) a JobSource pelo nome da fonte.
+ *
+ * Eram 2 queries por fonte a cada coleta, mesmo com a fonte ja cadastrada.
+ * Sao ~9 fontes, entao o ganho e pequeno comparado ao lote de vagas, mas o
+ * `create` podia falhar por corrida entre duas coletas.
+ */
+async function ensureJobSource(name: string) {
+  const existing = await prisma.jobSource.findFirst({ where: { name } });
+  if (existing) return existing;
+
+  return prisma.jobSource.create({
+    data: { name, type: 'api', baseUrl: null, enabled: true },
+  });
+}
 
 export async function setupCronSchedule(): Promise<void> {
   const collectionCron =
@@ -118,23 +135,17 @@ export async function runCollection(): Promise<{
         continue;
       }
 
-      let jobSource = await prisma.jobSource.findFirst({
-        where: { name: result.sourceId },
-      });
-      if (!jobSource) {
-        jobSource = await prisma.jobSource.create({
-          data: {
-            name: result.sourceId,
-            type: 'api',
-            baseUrl: null,
-            enabled: true,
-          },
-        });
-      }
+      const jobSource = await ensureJobSource(result.sourceId);
 
+      // Os filtros rodam em memoria antes de qualquer query: e mais barato
+      // descartar aqui do que pagar round-trip para descobrir que a vaga nao
+      // interessa.
+      const candidates: JobCandidate[] = [];
       for (const job of result.jobs) {
         const hash = computeHash(job);
 
+        // Ja vista em outro lote desta mesma coleta: pular evita contar a
+        // mesma vaga duas vezes em `sourceCount`.
         if (seenHashes.has(hash)) {
           continue;
         }
@@ -154,48 +165,55 @@ export async function runCollection(): Promise<{
           continue;
         }
 
-        const existing = await prisma.job.findUnique({ where: { hash } });
-        if (existing) {
-          seenHashes.add(hash);
-          await prisma.job.update({
-            where: { id: existing.id },
-            data: {
-              sourceCount: { increment: 1 },
-              collectedAt: new Date(),
-            },
-          });
-          continue;
+        candidates.push({
+          title: job.title,
+          company: job.company,
+          description: job.description,
+          location: job.location,
+          remote: job.remote,
+          seniority: detectedSeniority,
+          salaryMin: job.salaryMin,
+          salaryMax: job.salaryMax,
+          salaryCurrency: job.salaryCurrency,
+          url: job.url,
+          externalId: job.externalId,
+          publishedAt: job.publishedAt,
+          hash,
+        });
+      }
+
+      if (candidates.length === 0) continue;
+
+      try {
+        const outcome = await persistSourceJobs({
+          prisma,
+          sourceId: jobSource.id,
+          candidates,
+        });
+
+        // So entra no seenHashes depois de gravar. Se o lote falhar, a vaga
+        // continua elegivel na proxima fonte - igual ao comportamento de antes.
+        for (const candidate of candidates) {
+          seenHashes.add(candidate.hash);
         }
 
-        try {
-          const created = await prisma.job.create({
-            data: {
-              title: job.title,
-              company: job.company,
-              description: job.description,
-              location: job.location,
-              remote: job.remote.toUpperCase() as any,
-              seniority: detectedSeniority as any,
-              salaryMin: job.salaryMin,
-              salaryMax: job.salaryMax,
-              salaryCurrency: job.salaryCurrency,
-              url: job.url,
-              sourceId: jobSource.id,
-              externalId: job.externalId,
-              publishedAt: job.publishedAt,
-              hash,
-              status: 'RAW',
-              sourceCount: 1,
-            },
-          });
-          seenHashes.add(hash);
-          allNewJobIds.push(created.id);
-          layerCollected++;
-        } catch (err) {
+        allNewJobIds.push(...outcome.newJobIds);
+        layerCollected += outcome.inserted;
+
+        if (outcome.duplicateCount > 0) {
           layerErrors.push(
-            `Failed to insert job "${job.title}": ${err instanceof Error ? err.message : String(err)}`,
+            `Source ${result.sourceId}: ${outcome.duplicateCount} job(s) already saved by another collection`,
           );
         }
+      } catch (err) {
+        // Falha de lote (constraint, conexao) atinge todas as vagas da fonte.
+        // Antes cada vaga falhava sozinha; aqui vira uma entrada de erro por
+        // fonte, que e o que o log da coleta mostra.
+        layerErrors.push(
+          `Source ${result.sourceId}: failed to persist ${candidates.length} job(s): ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
       }
     }
 
