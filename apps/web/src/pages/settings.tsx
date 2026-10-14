@@ -21,6 +21,12 @@ import { EmptyState } from '../components/empty-state';
 import { ErrorBoundary } from '../components/error-boundary';
 import { toast } from '../components/ui/toast';
 import { SourceCard } from '../components/SourceCard';
+import {
+  textoResultadoColeta,
+  textoResultadoProcessamento,
+  formatElapsed,
+  type TextoResultado,
+} from '../lib/collection-result';
 import { AiUsageCard } from '../components/AiUsageCard';
 
 const cronSchema = z.object({
@@ -297,24 +303,66 @@ function SettingsPageContent() {
     },
   });
 
+  // Último resultado de coleta/processamento, para o painel persistente.
+  // O toast sozinho some em segundos; o painel fica até o próximo run.
+  const [ultimoResultado, setUltimoResultado] = useState<{
+    texto: TextoResultado;
+    erros: string[];
+    quando: Date;
+  } | null>(null);
+
+  // Quando a operação começou, para o cronômetro de progresso. A coleta
+  // síncrona raspa 9 fontes e pode levar minutos — sem o tic-tac, parece
+  // que travou.
+  const [inicioOperacao, setInicioOperacao] = useState<number | null>(null);
+  const [agora, setAgora] = useState(() => Date.now());
+
   const collectNowMutation = useMutation({
     mutationFn: () => adminApi.collectNow(),
-    onSuccess: () => {
+    onSuccess: (r) => {
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
-      toast.success('Coleta iniciada com sucesso');
+      setUltimoResultado({
+        texto: textoResultadoColeta({ coletadas: r.collected, erros: r.errors }),
+        erros: r.errors,
+        quando: new Date(),
+      });
+      toast.success(
+        r.collected === 1
+          ? 'Coleta concluída: 1 vaga nova'
+          : `Coleta concluída: ${r.collected} vagas novas`,
+      );
     },
     onError: () => toast.error('Erro na coleta'),
   });
 
   const processAllMutation = useMutation({
     mutationFn: () => adminApi.processAll(),
-    onSuccess: () => {
+    onSuccess: (r) => {
       queryClient.invalidateQueries({ queryKey: ['analytics'] });
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
-      toast.success('Processamento iniciado');
+      setUltimoResultado({
+        texto: textoResultadoProcessamento(r.count),
+        erros: [],
+        quando: new Date(),
+      });
+      toast.success(
+        r.count === 0 ? 'Nada para processar' : `Processamento enfileirado: ${r.count}`,
+      );
     },
     onError: () => toast.error('Erro no processamento'),
   });
+
+  const operacaoEmAndamento = collectNowMutation.isPending || processAllMutation.isPending;
+
+  useEffect(() => {
+    if (!operacaoEmAndamento) {
+      setInicioOperacao(null);
+      return;
+    }
+    if (inicioOperacao === null) setInicioOperacao(Date.now());
+    const t = setInterval(() => setAgora(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [operacaoEmAndamento, inicioOperacao]);
 
   function resetForm() {
     setFormData({ name: '', baseUrl: '', apiKey: '', model: '' });
@@ -622,14 +670,14 @@ function SettingsPageContent() {
                   size="sm"
                   variant="outline"
                   onClick={() => processAllMutation.mutate()}
-                  disabled={processAllMutation.isPending}
+                  disabled={operacaoEmAndamento}
                 >
                   {processAllMutation.isPending ? 'Processando...' : '⚡ Processar Todas'}
                 </Button>
                 <Button
                   size="sm"
                   onClick={() => collectNowMutation.mutate()}
-                  disabled={collectNowMutation.isPending}
+                  disabled={operacaoEmAndamento}
                 >
                   {collectNowMutation.isPending ? 'Buscando...' : '🔍 Buscar Agora'}
                 </Button>
@@ -637,6 +685,57 @@ function SettingsPageContent() {
             </CardTitle>
           </CardHeader>
           <CardContent>
+            {operacaoEmAndamento && inicioOperacao !== null && (
+              <div
+                className="mb-4 flex items-center gap-3 rounded-lg border border-accent/40 bg-accent/10 p-3 text-sm"
+                role="status"
+              >
+                <span className="inline-block h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+                <span>
+                  {collectNowMutation.isPending
+                    ? 'Buscando vagas nas fontes…'
+                    : 'Enfileirando vagas para processamento…'}
+                </span>
+                <span className="ml-auto font-mono text-xs text-muted-foreground">
+                  {formatElapsed((agora - inicioOperacao) / 1000)}
+                </span>
+              </div>
+            )}
+
+            {!operacaoEmAndamento && ultimoResultado && (
+              <div
+                className={`mb-4 rounded-lg border p-3 text-sm ${
+                  ultimoResultado.texto.temErro
+                    ? 'border-warning/40 bg-warning/10'
+                    : 'border-success/40 bg-success/10'
+                }`}
+                role="status"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="font-medium">{ultimoResultado.texto.titulo}</div>
+                    <div className="text-muted-foreground">{ultimoResultado.texto.detalhe}</div>
+                    {ultimoResultado.erros.length > 0 && (
+                      <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
+                        {ultimoResultado.erros.slice(0, 5).map((e, i) => (
+                          <li key={i}>• {e}</li>
+                        ))}
+                        {ultimoResultado.erros.length > 5 && (
+                          <li>…e mais {ultimoResultado.erros.length - 5}</li>
+                        )}
+                      </ul>
+                    )}
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {ultimoResultado.quando.toLocaleTimeString('pt-BR')}
+                    </div>
+                  </div>
+                  <Button size="sm" variant="ghost" onClick={() => setUltimoResultado(null)}>
+                    ✕
+                  </Button>
+                </div>
+              </div>
+            )}
+
             {isLoadingSources ? (
               <div className="space-y-3">
                 {Array.from({ length: 4 }).map((_, i) => (
