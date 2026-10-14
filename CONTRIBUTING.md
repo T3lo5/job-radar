@@ -57,6 +57,18 @@ pnpm test          # 324 testes devem passar
 pnpm build         # build + smoke test do artefato
 ```
 
+> **Clone fresco?** Gere o cliente Prisma e builde o shared antes do primeiro
+> `typecheck`/`build` — os dois são gitignored e não vêm no checkout:
+>
+> ```bash
+> pnpm --filter @job-radar/api exec prisma generate
+> pnpm --filter @job-radar/shared build
+> ```
+>
+> Sem isso, o typecheck quebra com dezenas de `Cannot find module
+'../generated/prisma'` mais cascata de `implicit-any`. (O CI faz esses dois
+> passos sozinho; localmente o `dev-up.sh` já gera o Prisma.)
+
 #### Commits
 
 [Conventional Commits](https://www.conventionalcommits.org/):

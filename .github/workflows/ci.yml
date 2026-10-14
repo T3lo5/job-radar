@@ -5,6 +5,9 @@ on:
     branches: [main]
   push:
     branches: [main]
+    # Tags de release também passam pelo CI: garante que o que vira
+    # versão está verde (foi assim que o typecheck quebrou sem ninguém ver).
+    tags: ['v*']
 
 # Cancela runs obsoletos do mesmo ref (evita fila e ruído em pushes seguidos)
 concurrency:
@@ -58,6 +61,16 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      # Sem isto o typecheck quebra em clone fresco com dezenas de
+      # "Cannot find module '../generated/prisma'" + cascata de implicit-any:
+      # o cliente Prisma é gerado (gitignored) e o `dist` do shared não vem
+      # no checkout. Localmente o dev-up.sh já gera; no CI precisa ser passo.
+      - name: Generate Prisma client
+        run: pnpm --filter @job-radar/api exec prisma generate
+
+      - name: Build shared package
+        run: pnpm --filter @job-radar/shared build
 
       - name: Migrate test database
         run: pnpm --filter @job-radar/api exec prisma migrate deploy
