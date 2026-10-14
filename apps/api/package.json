@@ -27,6 +27,7 @@
   },
   "postinstall": "prisma generate",
   "dependencies": {
+    "@fastify/cookie": "^11.1.3",
     "@fastify/cors": "^10.0.1",
     "@fastify/multipart": "^9.0.1",
     "@fastify/rate-limit": "^11.2.0",

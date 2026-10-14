@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
+import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
 import {
   serializerCompiler,
@@ -14,7 +15,8 @@ import { redis } from './db/redis.js';
 import { profileRoutes } from './routes/profile.js';
 import { settingsRoutes } from './routes/settings.js';
 import { setupRoutes } from './routes/setup.js';
-import { settingsCompletionGate } from './plugins/settings-gate.js';
+import { authRoutes } from './routes/auth.js';
+import { authGuard } from './plugins/auth-guard.js';
 import { adminRoutes } from './routes/admin.js';
 import { jobsRoutes } from './routes/jobs.js';
 import { resumeRoutes } from './routes/resumes.js';
@@ -79,7 +81,20 @@ async function buildServer() {
     });
   });
 
-  await app.register(cors, { origin: true });
+  await app.register(cookie);
+
+  // CORS: antes era `origin: true`, que reflete qualquer origem. Como o login
+  // usa cookie, a origem precisa ser explícita e credenciais habilitadas —
+  // browser não envia cookie para origem coringa.
+  const allowedOrigins = (process.env.CORS_ORIGINS ?? '')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+
+  await app.register(cors, {
+    origin: allowedOrigins.length > 0 ? allowedOrigins : true,
+    credentials: true,
+  });
 
   await app.register(rateLimit, {
     max: 100,
@@ -91,6 +106,7 @@ async function buildServer() {
     limits: { fileSize: 10 * 1024 * 1024 },
   });
 
+  await app.register(authRoutes);
   await app.register(profileRoutes);
   await app.register(settingsRoutes);
   await app.register(setupRoutes);
@@ -106,8 +122,9 @@ async function buildServer() {
   await app.register(cvOptimizerRoutes);
   await app.register(pdfExportRoutes);
 
-  await settingsCompletionGate(app);
-
+  // A guarda vem depois das rotas: o hook global precisa existir, e as rotas
+  // públicas de auth/setup são liberadas por prefixo dentro do próprio guard.
+  await authGuard(app);
   app.get('/health', async () => ({
     status: 'ok',
     service: 'job-radar-api',

@@ -27,8 +27,31 @@ model User {
   profile    Profile?
   resumes    Resume[]
   jobs       Job[]    @relation("CreatedBy")
+  sessions   Session[]
 
   @@map("users")
+}
+
+// Sessões de login (token opaco, revogável). O token em si nunca é guardado —
+// apenas seu hash SHA-256, então um vazamento do banco não devolve sessões
+// utilizáveis. Multi-dispositivo: cada login cria uma, e o usuário pode
+// revogar dispositivos individualmente em Configurações.
+model Session {
+  id         String    @id @default(cuid())
+  userId     String    @map("user_id")
+  tokenHash  String    @unique @map("token_hash")
+  expiresAt  DateTime  @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
+  lastUsedAt DateTime  @default(now()) @map("last_used_at")
+  userAgent  String?   @map("user_agent")
+  ip         String?
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
 }
 
 model Profile {
