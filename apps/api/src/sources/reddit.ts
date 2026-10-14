@@ -2,6 +2,7 @@ import type { NormalizedJob, SourceQuery } from '@job-radar/shared';
 import { parseRemoteMode } from './normalizer.js';
 import { settingsService } from '../services/settings-service.js';
 import { SETTINGS_SCOPE, APIFY_SETTINGS } from '../services/settings-keys.js';
+import { fetchWithTimeout } from '../utils/http.js';
 
 const DEFAULT_APIFY_ACTOR_URL =
   'https://api.apify.com/v2/acts/curious_coder~linkedin-jobs-scraper/run-sync-get-dataset-items';
@@ -50,7 +51,7 @@ export async function fetchLinkedInJobs(query: SourceQuery): Promise<NormalizedJ
   try {
     const keywords = query.keywords.length > 0 ? query.keywords.join(' ') : 'developer';
 
-    const response = await fetch(`${baseUrl}?token=${token}`, {
+    const response = await fetchWithTimeout(`${baseUrl}?token=${token}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

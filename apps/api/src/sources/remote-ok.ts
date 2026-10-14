@@ -1,5 +1,6 @@
 import type { NormalizedJob, SourceQuery } from '@job-radar/shared';
 import { normalizeJobFields } from './normalizer.js';
+import { fetchWithTimeout } from '../utils/http.js';
 
 const REMOTEOK_API = 'https://remoteok.com/api';
 
@@ -24,7 +25,7 @@ export async function fetchRemoteOk(query: SourceQuery): Promise<NormalizedJob[]
     url.searchParams.set('limit', String(query.limit));
   }
 
-  const response = await fetch(url.toString(), {
+  const response = await fetchWithTimeout(url.toString(), {
     headers: {
       'User-Agent': 'Mozilla/5.0 (compatible; JobRadar/1.0; +https://github.com/job-radar)',
       Accept: 'application/json',

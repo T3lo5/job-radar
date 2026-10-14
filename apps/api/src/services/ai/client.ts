@@ -1,4 +1,5 @@
 import type { AIClient, AIClientConfig, AIMessage, AIResponse } from './types.js';
+import { fetchWithTimeout } from '../../utils/http.js';
 
 export class HttpAiClient implements AIClient {
   private readonly config: AIClientConfig;
@@ -13,7 +14,7 @@ export class HttpAiClient implements AIClient {
   ): Promise<AIResponse> {
     const startTime = Date.now();
 
-    const response = await fetch(this.config.baseUrl, {
+    const response = await fetchWithTimeout(this.config.baseUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

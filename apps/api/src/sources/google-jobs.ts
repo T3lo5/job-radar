@@ -1,5 +1,6 @@
 import type { NormalizedJob, SourceQuery } from '@job-radar/shared';
 import { normalizeJobFields, parseDate, decodeHtmlEntities } from './normalizer.js';
+import { fetchWithTimeout } from '../utils/http.js';
 
 const GOOGLE_JOBS_SEARCH = 'https://www.google.com/search';
 
@@ -19,7 +20,7 @@ export async function fetchGoogleJobs(query: SourceQuery): Promise<NormalizedJob
 
   const url = `${GOOGLE_JOBS_SEARCH}?q=${encodeURIComponent(keywords)}&ibp=htl;jobs&hl=pt-BR&gl=br&location=${encodeURIComponent(location)}`;
 
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     headers: {
       'User-Agent':
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',

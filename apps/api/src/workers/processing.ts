@@ -1,5 +1,6 @@
 import { Queue, Worker, type ConnectionOptions } from 'bullmq';
 import { PipelineOrchestrator } from '../services/pipeline/orchestrator.js';
+import { redisConnectionOptions, WORKER_LOCK_OPTIONS } from '../db/redis-connection.js';
 
 const PROCESSING_QUEUE = 'job-processing';
 const EXTRACTION_JOB = 'extract-job';
@@ -7,11 +8,7 @@ const MATCHING_JOB = 'match-job';
 const ANALYSIS_JOB = 'analyze-job';
 
 function getConnection(): ConnectionOptions {
-  const url = new URL(process.env.REDIS_URL ?? 'redis://localhost:6379');
-  return {
-    host: url.hostname,
-    port: Number(url.port || 6379),
-  };
+  return redisConnectionOptions() as ConnectionOptions;
 }
 
 export const processingQueue = new Queue(PROCESSING_QUEUE, {
@@ -68,7 +65,7 @@ export function createProcessingWorker(): Worker {
 
       await orchestrator.run(jobId, step);
     },
-    { connection: getConnection(), concurrency: 2 },
+    { connection: getConnection(), concurrency: 2, ...WORKER_LOCK_OPTIONS },
   );
 
   worker.on('completed', (job) => {

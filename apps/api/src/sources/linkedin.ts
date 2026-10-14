@@ -1,5 +1,6 @@
 import type { NormalizedJob, SourceQuery } from '@job-radar/shared';
 import { normalizeJobFields } from './normalizer.js';
+import { fetchWithTimeout } from '../utils/http.js';
 
 const LINKEDIN_GUEST_API = 'https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search';
 
@@ -32,7 +33,7 @@ export async function fetchLinkedIn(query: SourceQuery): Promise<NormalizedJob[]
     const url = `${LINKEDIN_GUEST_API}?keywords=${keywords}&location=${location}&start=${start}`;
 
     try {
-      const response = await fetch(url, {
+      const response = await fetchWithTimeout(url, {
         headers: {
           'User-Agent': getRandomUserAgent(),
           Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',

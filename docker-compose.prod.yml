@@ -83,7 +83,8 @@ services:
     ports:
       - "127.0.0.1:${APP_PORT:-3001}:3001"
     volumes:
-      - api-storage:/app/storage
+      # Mesmo caminho que UPLOAD_DIR resolve no container (WORKDIR /app/apps/api)
+      - api-storage:/app/apps/api/uploads
     networks:
       - jobradar-net
     depends_on:

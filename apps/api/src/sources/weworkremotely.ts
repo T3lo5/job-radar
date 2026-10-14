@@ -1,5 +1,6 @@
 import type { NormalizedJob, SourceQuery } from '@job-radar/shared';
 import { normalizeJobFields } from './normalizer.js';
+import { fetchWithTimeout } from '../utils/http.js';
 
 const WWR_RSS = 'https://weworkremotely.com/remote-jobs.rss';
 
@@ -55,7 +56,7 @@ function parseWwrRss(xml: string): WwrJob[] {
 }
 
 export async function fetchWeWorkRemotely(query: SourceQuery): Promise<NormalizedJob[]> {
-  const response = await fetch(WWR_RSS, {
+  const response = await fetchWithTimeout(WWR_RSS, {
     headers: {
       Accept: 'application/rss+xml, application/xml, text/xml',
     },

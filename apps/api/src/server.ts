@@ -28,9 +28,13 @@ import { reportRoutes } from './routes/reports.js';
 import { analyticsRoutes } from './routes/analytics.js';
 import { cvOptimizerRoutes } from './routes/cv-optimizer.js';
 import { pdfExportRoutes } from './routes/pdf-export.js';
-import { createJobCollectionWorker, setupCronSchedule } from './workers/job-collection.js';
-import { createProcessingWorker } from './workers/processing.js';
-import { startTelegramBot } from './services/telegram-bot.js';
+import {
+  createJobCollectionWorker,
+  setupCronSchedule,
+  jobCollectionQueue,
+} from './workers/job-collection.js';
+import { createProcessingWorker, processingQueue } from './workers/processing.js';
+import { startTelegramBot, stopTelegramBot } from './services/telegram-bot.js';
 import { getEnv } from './config/env.js';
 
 const env = getEnv();
@@ -200,6 +204,39 @@ async function main() {
   // Start Telegram bot
   await startTelegramBot();
 
+  // Encerramento gracioso.
+  //
+  // Sem isto, um `docker restart`/deploy mata o processo no meio de um job:
+  // os workers BullMQ são cortados e as vagas ficam travadas em MATCHING/
+  // ANALYZING para sempre, sem fila de reprocessamento. Fechar na ordem
+  // certa dá tempo de o job corrente terminar.
+  let shuttingDown = false;
+  const shutdown = async (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    app.log.info({ signal }, 'encerrando...');
+
+    // Ordem: para de aceitar trabalho, deixa o corrente terminar, e só então
+    // fecha as conexões.
+    await app.close().catch(() => {});
+    await processingWorker.close().catch(() => {});
+    await worker.close().catch(() => {});
+    await processingQueue.close().catch(() => {});
+    await jobCollectionQueue.close().catch(() => {});
+    await stopTelegramBot().catch(() => {});
+    await prisma.$disconnect().catch(() => {});
+    redis.disconnect();
+
+    app.log.info('encerrado com sucesso');
+    process.exit(0);
+  };
+
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+    process.on(signal, () => {
+      void shutdown(signal);
+    });
+  }
+
   try {
     await app.listen({ port: PORT, host: HOST });
   } catch (err) {
@@ -208,4 +245,8 @@ async function main() {
   }
 }
 
-main();
+main().catch((err) => {
+  // Sem isto, uma falha no boot vira unhandledRejection silencioso.
+  console.error('Falha ao iniciar o Job Radar:', err);
+  process.exit(1);
+});

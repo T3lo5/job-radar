@@ -1,5 +1,6 @@
 import type { NormalizedJob, SourceQuery } from '@job-radar/shared';
 import { normalizeJobFields, parseDate, stripHtml } from './normalizer.js';
+import { fetchWithTimeout } from '../utils/http.js';
 
 const INDEED_SEARCH = 'https://www.indeed.com/jobs';
 const INDEED_BRAZIL_SEARCH = 'https://br.indeed.com/vagas';
@@ -33,7 +34,7 @@ export async function fetchIndeed(query: SourceQuery): Promise<NormalizedJob[]> 
     url.searchParams.set('remotejob', '032b3046-06a3-4876-8dfd-474eb5e7ed11');
   }
 
-  const response = await fetch(url.toString(), {
+  const response = await fetchWithTimeout(url.toString(), {
     headers: {
       'User-Agent':
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',

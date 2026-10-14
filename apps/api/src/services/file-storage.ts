@@ -5,7 +5,12 @@ import { randomUUID } from 'node:crypto';
 import type { Readable } from 'node:stream';
 import type { Stats } from 'node:fs';
 
-const UPLOAD_DIR = join(process.cwd(), 'uploads');
+// Configurável porque o container roda com WORKDIR /app/apps/api, e o volume
+// nomeado precisa apontar para o mesmo caminho. Sem UPLOAD_DIR, os CVs iam
+// para a camada gravável do container e sumiam em qualquer `docker compose down`.
+const UPLOAD_DIR = process.env.UPLOAD_DIR
+  ? join(process.env.UPLOAD_DIR)
+  : join(process.cwd(), 'uploads');
 
 if (!existsSync(UPLOAD_DIR)) {
   mkdirSync(UPLOAD_DIR, { recursive: true });

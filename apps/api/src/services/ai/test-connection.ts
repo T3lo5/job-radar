@@ -1,4 +1,5 @@
 import type { AIClientConfig } from './types.js';
+import { fetchWithTimeout } from '../../utils/http.js';
 
 export async function testConnection(config: AIClientConfig): Promise<{
   ok: boolean;
@@ -8,7 +9,7 @@ export async function testConnection(config: AIClientConfig): Promise<{
   try {
     const startTime = Date.now();
 
-    const response = await fetch(`${config.baseUrl}`, {
+    const response = await fetchWithTimeout(`${config.baseUrl}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

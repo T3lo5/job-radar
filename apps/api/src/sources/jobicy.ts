@@ -1,5 +1,6 @@
 import type { NormalizedJob, SourceQuery } from '@job-radar/shared';
 import { normalizeJobFields } from './normalizer.js';
+import { fetchWithTimeout } from '../utils/http.js';
 
 const JOBICY_API = 'https://jobicy.com/api/v2/remote-jobs';
 
@@ -42,7 +43,7 @@ export async function fetchJobicy(query: SourceQuery): Promise<NormalizedJob[]> 
     url.searchParams.set('geo', 'anywhere');
   }
 
-  const response = await fetch(url.toString(), {
+  const response = await fetchWithTimeout(url.toString(), {
     headers: {
       Accept: 'application/json',
     },

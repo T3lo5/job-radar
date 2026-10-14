@@ -10,6 +10,7 @@ import { createLocationFilter } from '../utils/location-filter.js';
 import { createJobFilter } from '../utils/job-filter.js';
 import { buildSearchKeywords } from '../utils/search-strategy.js';
 import { SETTINGS_SCOPE, CRON_SETTINGS, DEFAULT_CRON } from '../services/settings-keys.js';
+import { redisConnectionOptions, WORKER_LOCK_OPTIONS } from '../db/redis-connection.js';
 
 const QUEUE_NAME = 'job-collection';
 const JOB_NAME = 'collect-jobs';
@@ -17,11 +18,7 @@ const REPORT_NAME = 'send-daily-report';
 const MIN_TOTAL_JOBS = 10;
 
 function getConnection(): ConnectionOptions {
-  const url = new URL(process.env.REDIS_URL ?? 'redis://localhost:6379');
-  return {
-    host: url.hostname,
-    port: Number(url.port || 6379),
-  };
+  return redisConnectionOptions() as ConnectionOptions;
 }
 
 function computeHash(job: { title: string; company: string; url: string }): string {
@@ -234,6 +231,7 @@ export function createJobCollectionWorker(): Worker {
     {
       connection: getConnection(),
       concurrency: 1,
+      ...WORKER_LOCK_OPTIONS,
     },
   );
 

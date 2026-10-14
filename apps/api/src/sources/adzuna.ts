@@ -2,6 +2,7 @@ import type { NormalizedJob, SourceQuery } from '@job-radar/shared';
 import { normalizeJobFields } from './normalizer.js';
 import { settingsService } from '../services/settings-service.js';
 import { SETTINGS_SCOPE, ADZUNA_SETTINGS } from '../services/settings-keys.js';
+import { fetchWithTimeout } from '../utils/http.js';
 
 const ADZUNA_API = 'https://api.adzuna.com/v1/api/jobs';
 
@@ -68,7 +69,7 @@ export async function fetchAdzuna(query: SourceQuery): Promise<NormalizedJob[]> 
   url.searchParams.set('results_per_page', String(resultsPerPage));
   url.searchParams.set('content-type', 'application/json');
 
-  const response = await fetch(url.toString(), {
+  const response = await fetchWithTimeout(url.toString(), {
     headers: {
       Accept: 'application/json',
     },
