@@ -27,9 +27,10 @@ export class ResumeService {
     try {
       rawText = await extractText(buffer, file.mimetype);
     } catch (err) {
-      throw new Error(
-        `Failed to extract text: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      // A mensagem de extração já vem pronta para o usuário (ver FALHA_PDF em
+      // text-extraction.ts). Embrulhar de novo com prefixo técnico em inglês
+      // era o que produzia "Failed to extract text: Invalid number...".
+      throw err instanceof Error ? err : new Error(String(err));
     }
 
     const stored = await saveFile(buffer, file.filename, file.mimetype);
