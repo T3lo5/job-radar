@@ -10,7 +10,17 @@ const envSchema = z.object({
   APP_PORT: z.coerce.number().int().min(1).max(65535).default(3001),
   APP_HOST: z.string().default('0.0.0.0'),
 
-  SETTINGS_ENCRYPTION_KEY: z.string().min(1),
+  SETTINGS_ENCRYPTION_KEY: z
+    .string()
+    .min(1)
+    // AES-256-GCM exige chave de exatamente 32 bytes. Sem esta validação, uma
+    // chave de tamanho errado só estoura no primeiro `createCipheriv`, com um
+    // "Invalid key length" opaco, no meio de um setup que parecia ter funcionado.
+    .refine((v) => Buffer.from(v, 'base64').length === 32, {
+      message:
+        'SETTINGS_ENCRYPTION_KEY deve ser base64 com 32 bytes. Gere com: ' +
+        "node -e \"console.log(require('crypto').randomBytes(32).toString('base64'))\"",
+    }),
 });
 
 export type Env = z.infer<typeof envSchema>;

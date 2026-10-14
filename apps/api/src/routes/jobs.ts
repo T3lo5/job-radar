@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../db/prisma.js';
 import { jobService } from '../services/job-service.js';
 import { computeMatchScore } from '../services/matching/engine.js';
+import { httpUrl } from '../utils/validation.js';
 
 const jobsQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -31,7 +32,7 @@ const createJobSchema = z.object({
   salaryMin: z.number().int().min(0).nullable().optional(),
   salaryMax: z.number().int().min(0).nullable().optional(),
   salaryCurrency: z.string().max(10).nullable().optional(),
-  url: z.string().url().max(2000),
+  url: httpUrl(2000),
   externalId: z.string().max(200).nullable().optional(),
   publishedAt: z.coerce.date().nullable().optional(),
   applicationStatus: z

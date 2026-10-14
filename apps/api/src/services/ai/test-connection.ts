@@ -22,10 +22,12 @@ export async function testConnection(config: AIClientConfig): Promise<{
     });
 
     if (!response.ok) {
-      return {
-        ok: false,
-        error: `API returned ${response.status}: ${await response.text()}`,
-      };
+      // Não devolvemos o corpo do provedor: ele vem de uma URL que o usuário
+      // digitou, então repassá-lo seria transformar a API em proxy de leitura.
+      // O status já basta para diagnosticar (401 = chave, 404 = modelo/URL).
+      const body = await response.text();
+      console.error(`[ai test-connection] ${response.status}: ${body.slice(0, 300)}`);
+      return { ok: false, error: `API returned ${response.status}` };
     }
 
     await response.json();

@@ -1,9 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { settingsService } from '../services/settings-service.js';
+import { scopeSchema } from '../utils/validation.js';
 
 const settingSetSchema = z.object({
-  scope: z.string().min(1).max(50),
+  // Escopo fechado: antes qualquer string era aceita.
+  scope: scopeSchema,
   key: z.string().min(1).max(100),
   value: z.string(),
   isSecret: z.boolean().default(false),

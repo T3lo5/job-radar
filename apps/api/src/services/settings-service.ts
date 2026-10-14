@@ -11,7 +11,16 @@ function getKey(): Buffer {
   if (!keyBase64) {
     throw new Error('SETTINGS_ENCRYPTION_KEY is not set');
   }
-  return Buffer.from(keyBase64, 'base64');
+  const key = Buffer.from(keyBase64, 'base64');
+  if (key.length !== 32) {
+    // Falha cedo e com mensagem acionável, em vez de "Invalid key length"
+    // surgindo depois, na primeira gravação de um setting.
+    throw new Error(
+      `SETTINGS_ENCRYPTION_KEY deve ter 32 bytes (tem ${key.length}). ` +
+        "Gere com: node -e \"console.log(require('crypto').randomBytes(32).toString('base64'))\"",
+    );
+  }
+  return key;
 }
 
 function encrypt(plaintext: string): { encryptedValue: string; iv: string; tag: string } {

@@ -51,6 +51,34 @@ async function buildServer() {
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
 
+  // Sem este handler, o fallback do Fastify devolve `error.message` crua ao
+  // cliente — incluindo mensagens de banco e o corpo de resposta do provedor
+  // de IA. Erros de validação são seguros de expor; o resto é logado com
+  // reqId e devolvido genérico.
+  app.setErrorHandler((error, request, reply) => {
+    const err = error as unknown as { validation?: unknown; statusCode?: number };
+
+    if (err.validation) {
+      return reply.status(400).send({
+        error: 'Dados inválidos',
+        details: err.validation,
+      });
+    }
+
+    if (err.statusCode === 429) {
+      return reply.status(429).send({ error: 'Muitas requisições. Tente novamente em instantes.' });
+    }
+
+    request.log.error({ err: error, reqId: request.id, url: request.url }, 'erro não tratado');
+
+    const status =
+      err.statusCode && err.statusCode >= 400 && err.statusCode < 500 ? err.statusCode : 500;
+    return reply.status(status).send({
+      error:
+        status === 500 ? 'Erro interno do servidor' : 'Não foi possível processar a requisição',
+    });
+  });
+
   await app.register(cors, { origin: true });
 
   await app.register(rateLimit, {
@@ -87,20 +115,24 @@ async function buildServer() {
   }));
 
   app.get('/health/ready', async (_request, reply) => {
-    const checks: Record<string, { ok: boolean; error?: string }> = {};
+    const checks: Record<string, { ok: boolean }> = {};
 
     try {
       await prisma.$queryRaw`SELECT 1`;
       checks.postgres = { ok: true };
-    } catch (err) {
-      checks.postgres = { ok: false, error: (err as Error).message };
+    } catch {
+      // Mensagem crua do Prisma pode expor host/credenciais parciais: só o ok
+      // vai na resposta, o detalhe fica no log.
+      checks.postgres = { ok: false };
+      _request.log.error('health/ready: postgres indisponível');
     }
 
     try {
       const pong = await redis.ping();
       checks.redis = { ok: pong === 'PONG' };
-    } catch (err) {
-      checks.redis = { ok: false, error: (err as Error).message };
+    } catch {
+      checks.redis = { ok: false };
+      _request.log.error('health/ready: redis indisponível');
     }
 
     const allOk = Object.values(checks).every((c) => c.ok);

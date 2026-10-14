@@ -28,8 +28,12 @@ export class HttpAiClient implements AIClient {
     });
 
     if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`AI API error (${response.status}): ${error}`);
+      // O corpo da resposta do provedor pode conter detalhes internos da conta
+      // (e em alguns provedores, partes da chave). Só o status é propagado —
+      // o corpo fica registrado no log para diagnóstico.
+      const body = await response.text();
+      console.error(`[ai] ${response.status} do provedor: ${body.slice(0, 500)}`);
+      throw new Error(`AI API error (${response.status})`);
     }
 
     const data = (await response.json()) as {

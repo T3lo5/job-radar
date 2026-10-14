@@ -1,9 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { testConnection, getConfig } from '../services/ai/factory.js';
+import { httpUrl } from '../utils/validation.js';
 
 const testSchema = z.object({
-  baseUrl: z.string().url(),
+  baseUrl: httpUrl(),
   apiKey: z.string().min(1),
   model: z.string().min(1),
 });

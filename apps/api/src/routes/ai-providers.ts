@@ -10,10 +10,11 @@ import {
 } from '../services/ai-providers.js';
 import { testConnection } from '../services/ai/factory.js';
 import { prisma } from '../db/prisma.js';
+import { httpUrl } from '../utils/validation.js';
 
 const aiProviderSchema = z.object({
   name: z.string().min(1).max(100),
-  baseUrl: z.string().url(),
+  baseUrl: httpUrl(),
   apiKey: z.string().min(1),
   model: z.string().min(1),
   isActive: z.boolean().default(false),
@@ -21,7 +22,7 @@ const aiProviderSchema = z.object({
 
 const aiProviderUpdateSchema = z.object({
   name: z.string().min(1).max(100).optional(),
-  baseUrl: z.string().url().optional(),
+  baseUrl: httpUrl().optional(),
   apiKey: z.string().min(1).optional(),
   model: z.string().min(1).optional(),
   isActive: z.boolean().optional(),

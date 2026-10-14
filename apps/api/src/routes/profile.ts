@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db/prisma.js';
+import { httpUrl } from '../utils/validation.js';
 
 const skillLevelSchema = z.enum(['BEGINNER', 'INTERMEDIATE', 'ADVANCED', 'EXPERT']);
 const senioritySchema = z.enum(['INTERN', 'JUNIOR', 'MID', 'SENIOR', 'SPECIALIST', 'LEAD']);
@@ -60,13 +61,13 @@ const certificationSchema = z.object({
   issuedAt: z.coerce.date().nullable().optional(),
   expiresAt: z.coerce.date().nullable().optional(),
   credentialId: z.string().max(200).nullable().optional(),
-  url: z.string().url().max(500).nullable().optional(),
+  url: httpUrl(500).nullable().optional(),
 });
 
 const projectSchema = z.object({
   name: z.string().min(1).max(200),
   description: z.string().max(5000).nullable().optional(),
-  url: z.string().url().max(500).nullable().optional(),
+  url: httpUrl(500).nullable().optional(),
   skills: z.array(z.string()).max(20).optional(),
 });
 

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { settingsService } from '../services/settings-service.js';
+import { httpUrl } from '../utils/validation.js';
 import {
   AI_SETTINGS,
   TELEGRAM_SETTINGS,
@@ -10,7 +11,7 @@ import {
 
 const setupAiSchema = z.object({
   provider: z.string().min(1),
-  baseUrl: z.string().url().default('https://api.openai.com/v1'),
+  baseUrl: httpUrl().default('https://api.openai.com/v1'),
   apiKey: z.string().min(1),
   model: z.string().min(1),
   customPrompt: z.string().optional(),
