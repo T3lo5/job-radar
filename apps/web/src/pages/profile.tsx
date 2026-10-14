@@ -22,6 +22,7 @@ import { toast } from '../components/ui/toast';
 import { handleApiError } from '../services/error-handler';
 import { cn } from '../lib/utils/cn';
 import { REMOTE_MODE_LABELS } from '@job-radar/shared';
+import { initialSeniorityList, displaySeniority, syncedSeniority } from '../lib/seniority';
 
 const profileSchema = z.object({
   title: z.string().max(200).optional(),
@@ -214,7 +215,7 @@ export function ProfilePage() {
     defaultValues: {
       title: profile?.title ?? '',
       seniority: profile?.seniority as any,
-      seniorityList: (profile?.seniorityList as any) ?? [],
+      seniorityList: initialSeniorityList(profile) as any,
       location: profile?.location ?? '',
       remotePreference: profile?.remotePreference as any,
       salaryMin: profile?.salaryMin ?? undefined,
@@ -231,7 +232,7 @@ export function ProfilePage() {
       profileForm.reset({
         title: profile.title ?? '',
         seniority: profile.seniority as any,
-        seniorityList: (profile.seniorityList as any) ?? [],
+        seniorityList: initialSeniorityList(profile) as any,
         location: profile.location ?? '',
         remotePreference: profile.remotePreference as any,
         salaryMin: profile.salaryMin ?? undefined,
@@ -248,6 +249,21 @@ export function ProfilePage() {
     resolver: zodResolver(skillSchema),
     defaultValues: { skillName: '', level: 'INTERMEDIATE', yearsExp: undefined },
   });
+
+  /**
+   * Salva o perfil mantendo os dois campos de senioridade coerentes.
+   *
+   * Sem isto, quem edita só a lista deixa a única defasada — e o score de
+   * senioridade do matching passa a usar um valor que o usuário não vê em
+   * lugar nenhum (o campo único nem tem input na tela).
+   */
+  const handleSubmitProfile = (data: ProfileFormData) => {
+    const lista = (data.seniorityList ?? []) as string[];
+    updateProfile.mutate({
+      ...data,
+      seniority: (syncedSeniority(lista, data.seniority) ?? undefined) as any,
+    });
+  };
 
   const updateProfile = useMutation({
     mutationFn: (data: ProfileFormData) => profileApi.update(data as any),
@@ -704,7 +720,7 @@ export function ProfilePage() {
               <CardContent>
                 <ProfileForm
                   form={profileForm}
-                  onSubmit={(data) => updateProfile.mutate(data)}
+                  onSubmit={handleSubmitProfile}
                   seniorityOptions={SENIORITY_OPTIONS}
                   jobTypeOptions={JOB_TYPE_OPTIONS}
                   watchedSeniority={watchedSeniority}
@@ -750,7 +766,7 @@ export function ProfilePage() {
                 <ProfileForm
                   key={profile ? 'loaded' : 'loading'}
                   form={profileForm}
-                  onSubmit={(data) => updateProfile.mutate(data)}
+                  onSubmit={handleSubmitProfile}
                   seniorityOptions={SENIORITY_OPTIONS}
                   jobTypeOptions={JOB_TYPE_OPTIONS}
                   watchedSeniority={watchedSeniority}
@@ -775,10 +791,7 @@ export function ProfilePage() {
                     label="Tipos de cargo"
                     value={profile.jobTypes?.length ? profile.jobTypes.join(', ') : null}
                   />
-                  <InfoRow
-                    label="Senioridade"
-                    value={profile.seniorityList?.join(', ') ?? profile.seniority ?? '-'}
-                  />
+                  <InfoRow label="Senioridade" value={displaySeniority(profile)} />
                   <InfoRow label="Localização" value={profile.location} />
                   <InfoRow
                     label="Modalidade"

@@ -22,3 +22,35 @@ export function seniorityLabel(value: string | null | undefined): string {
   if (!value) return SENIORITY_LABELS.UNKNOWN.label;
   return SENIORITY_LABELS[value as Seniority]?.label ?? value;
 }
+
+/**
+ * Ordem de senioridade, do menor para o maior.
+ *
+ * Existe para um caso só: quando a lista multi-select e a senioridade única
+ * precisam concordar, a única assume o maior valor da lista. Sem uma ordem
+ * declarada, cada lugar inventaria a sua.
+ */
+export const SENIORITY_RANK: readonly Seniority[] = [
+  'UNKNOWN',
+  'INTERN',
+  'JUNIOR',
+  'MID',
+  'SENIOR',
+  'SPECIALIST',
+  'LEAD',
+];
+
+/** O maior valor de uma lista, ou null se vazia. */
+export function maxSeniority(values: ReadonlyArray<string | null | undefined>): Seniority | null {
+  let best: Seniority | null = null;
+  let bestRank = -1;
+  for (const v of values) {
+    if (!v) continue;
+    const rank = SENIORITY_RANK.indexOf(v as Seniority);
+    if (rank > bestRank) {
+      bestRank = rank;
+      best = v as Seniority;
+    }
+  }
+  return best;
+}

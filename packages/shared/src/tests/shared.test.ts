@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { lerEnumDoSchema } from './schema-enum.js';
 import { SENIORITIES, isSeniority, type Seniority } from '../types/seniority.js';
-import { SENIORITY_LABELS, seniorityLabel } from '../utils/seniority-label.js';
+import {
+  SENIORITY_LABELS,
+  SENIORITY_RANK,
+  seniorityLabel,
+  maxSeniority,
+} from '../utils/seniority-label.js';
 import { APPLICATION_STATUSES, isApplicationStatus } from '../types/application.js';
 import { JOB_PROCESSING_STATUSES, isJobProcessingStatus } from '../types/job.js';
 import { MATCH_CRITERIA } from '../types/match.js';
@@ -85,6 +90,25 @@ describe('seniorityLabel', () => {
   it('devolve o valor cru se vier algo inesperado', () => {
     // Preferir mostrar 'SPECIALISTA' a mostrar nada: o usuário ainda se orienta.
     expect(seniorityLabel('ESPECIALISTA')).toBe('ESPECIALISTA');
+  });
+});
+
+describe('maxSeniority', () => {
+  it('devolve a maior da lista', () => {
+    expect(maxSeniority(['JUNIOR', 'SENIOR'])).toBe('SENIOR');
+    expect(maxSeniority(['LEAD'])).toBe('LEAD');
+  });
+
+  it('ordem respeita a hierarquia, nao a ordem alfabetica', () => {
+    // Alfabeticamente SPECIALIST < SENIOR; na hierarquia é o contrário.
+    expect(maxSeniority(['SENIOR', 'SPECIALIST'])).toBe('SPECIALIST');
+    expect(SENIORITY_RANK.indexOf('SENIOR')).toBeLessThan(SENIORITY_RANK.indexOf('SPECIALIST'));
+  });
+
+  it('ignora nulo e devolve null quando vazia', () => {
+    expect(maxSeniority([null, undefined, 'MID'])).toBe('MID');
+    expect(maxSeniority([])).toBeNull();
+    expect(maxSeniority([null])).toBeNull();
   });
 });
 
