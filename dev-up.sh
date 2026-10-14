@@ -152,6 +152,24 @@ cleanup() {
 }
 trap cleanup INT TERM
 
+# Processos órfãos de uma sessão anterior segurando as portas derrubam o servidor
+# novo com EADDRINUSE — e o usuário testa código velho sem perceber, porque um
+# watcher antigo atende a porta. Mata só o que é deste projeto (tsx/vite com o
+# caminho do repo na linha de comando), nunca processo alheio.
+log "Checking for stale dev servers..."
+for padrao in "tsx.*job-vacancy-tracker" "vite.*job-vacancy-tracker"; do
+  pkill -f "$padrao" 2>/dev/null || true
+done
+sleep 2
+for porta in 3001 5173; do
+  if (ss -ltn 2>/dev/null || netstat -ltn 2>/dev/null) | grep -qE ":${porta}[[:space:]]"; then
+    error "Porta ${porta} ainda ocupada após limpar processos do projeto."
+    error "Veja quem segura com: ss -ltnp | grep ${porta}"
+    exit 1
+  fi
+done
+success "Ports 3001 and 5173 free"
+
 # Start API in background
 log "Starting API (http://localhost:3001)..."
 cd apps/api
