@@ -1,5 +1,6 @@
 import type { ProcessingContext, ProcessingStep, StepDependencies } from './step.js';
 import type { JobExtraction } from '../ai/job-extractor.js';
+import { resolveSkills } from './skill-resolver.js';
 
 export class ExtractionStep implements ProcessingStep {
   name = 'extraction';
@@ -18,21 +19,20 @@ export class ExtractionStep implements ProcessingStep {
       extracted = await this.fallbackExtraction(ctx, job);
     }
 
-    for (const skillName of extracted.skills) {
-      let skill = await ctx.prisma.skill.findFirst({
-        where: { name: { equals: skillName, mode: 'insensitive' } },
-      });
+    // Resolvido em lote: eram 2 queries por skill (findFirst + upsert), e uma
+    // vaga com 20 skills virava 40 round-trips. Sao 3 queries no total,
+    // independentes de quantas skills a vaga tiver.
+    const resolvidas = await resolveSkills(ctx.prisma.skill, extracted.skills);
 
-      if (!skill) {
-        skill = await ctx.prisma.skill.create({
-          data: { name: skillName, aliases: [] },
-        });
-      }
-
-      await ctx.prisma.jobSkill.upsert({
-        where: { jobId_skillId: { jobId: ctx.jobId, skillId: skill.id } },
-        update: {},
-        create: { jobId: ctx.jobId, skillId: skill.id },
+    // Deduplica por skillId antes de gravar: dois nomes que caem na mesma skill
+    // (React e react) virariam a mesma linha duas vezes, e o skipDuplicates do
+    // jobSkill seguraria — mas mandar dado redundante para o banco e pedir
+    // para ele limpar nao e o mesmo que mandar certo.
+    const skillIds = [...new Set([...resolvidas.values()].map((s) => s.id))];
+    if (skillIds.length > 0) {
+      await ctx.prisma.jobSkill.createMany({
+        data: skillIds.map((skillId) => ({ jobId: ctx.jobId, skillId })),
+        skipDuplicates: true,
       });
     }
 

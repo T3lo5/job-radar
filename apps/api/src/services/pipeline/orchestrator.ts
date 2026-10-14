@@ -116,10 +116,12 @@ export class PipelineOrchestrator {
       skill: {
         findFirst: (args: any) => prisma.skill.findFirst(args),
         create: (args: any) => prisma.skill.create(args),
+        createMany: (args: any) => prisma.skill.createMany(args),
         findMany: (args: any) => prisma.skill.findMany(args),
       },
       jobSkill: {
         upsert: (args: any) => prisma.jobSkill.upsert(args),
+        createMany: (args: any) => prisma.jobSkill.createMany(args),
       },
       profile: {
         findFirst: (args: any) => prisma.profile.findFirst(args),

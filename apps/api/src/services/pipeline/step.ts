@@ -18,10 +18,14 @@ export interface ProcessingContext {
     skill: {
       findFirst: (args: any) => Promise<any>;
       create: (args: any) => Promise<any>;
+      // Em lote: a resolução de skills saiu de 2 queries por skill para 3 no
+      // total (ver skill-resolver.ts).
+      createMany: (args: any) => Promise<any>;
       findMany: (args: any) => Promise<any>;
     };
     jobSkill: {
       upsert: (args: any) => Promise<any>;
+      createMany: (args: any) => Promise<any>;
     };
     profile: {
       findFirst: (args: any) => Promise<any>;
