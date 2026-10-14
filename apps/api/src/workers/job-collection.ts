@@ -78,7 +78,7 @@ export async function runCollection(): Promise<{
   });
 
   // Create location filter based on profile preference
-  const locationFilter = createLocationFilter(profile?.location);
+  const locationFilter = createLocationFilter(profile?.location, profile?.remotePreference);
 
   const keywords = Object.entries(settings)
     .filter(([key]) => key.startsWith('keyword.'))
@@ -144,7 +144,7 @@ export async function runCollection(): Promise<{
 
         const detectedSeniority = detectSeniority(job.title);
 
-        if (!locationFilter.isAllowed(job.location, job.description)) {
+        if (!locationFilter.isAllowed(job.location, job.description, job.remote)) {
           continue;
         }
 

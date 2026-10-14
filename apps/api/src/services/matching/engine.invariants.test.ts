@@ -130,4 +130,21 @@ describe('invariantes do score', () => {
     const sem = score(['React'], ['Python']);
     expect(com.score).toBeGreaterThan(sem.score);
   });
+
+  it('não tem mais o critério fixo "other" no breakdown', () => {
+    // Regressão: 'other' era um 50 constante com peso 0.05, ou seja 2,5
+    // pontos garantidos em toda vaga e um teto que impedia 100.
+    expect(score(['React'], ['React']).breakdown).not.toHaveProperty('other');
+  });
+
+  it('candidato muito aderente passa de 91 (teto antigo)', () => {
+    const skills = ['React', 'TypeScript', 'Node.js', 'AWS', 'Docker'];
+    expect(score(skills, skills).score).toBeGreaterThan(91);
+  });
+
+  it('trata "sem dados" como neutro, não como zero', () => {
+    // Perfil sem skills não pode ser penalizado como se estivesse errado.
+    const r = score(['React', 'TypeScript'], []);
+    expect(r.breakdown.experience).toBe(50);
+  });
 });

@@ -13,7 +13,6 @@ export interface MatchBreakdown {
   location: number;
   cloudDevOps: number;
   languages: number;
-  other: number;
   [key: string]: number;
 }
 
@@ -27,14 +26,25 @@ export interface MatchResult {
 }
 
 const WEIGHTS = {
-  technologies: 0.35,
-  experience: 0.2,
-  seniority: 0.15,
+  technologies: 0.4,
+  experience: 0.22,
+  seniority: 0.16,
   location: 0.1,
-  cloudDevOps: 0.1,
+  // Sobrepõe conceitualmente a technologies (ambos olham skills), então
+  // recebe menos peso.
+  cloudDevOps: 0.07,
   languages: 0.05,
-  other: 0.05,
 } as const;
+
+/**
+ * Score neutro para "não temos sinal".
+ *
+ * Antes o fallback era 0 em alguns criterios (perfil sem skills recebia 0/20
+ * em experiencia), o que punia o candidato por informação faltando e jogava
+ * todo mundo para SKIP. 50 = "não sei", e não sabermos não é o mesmo que
+ * estar errado.
+ */
+const NEUTRAL_SCORE = 50;
 
 const CLOUD_DEVOPS_KEYWORDS = [
   'aws',
@@ -95,7 +105,6 @@ export function computeMatchScore(
   const seniorityScore = computeSeniorityScore(job, profile);
   const locationScore = computeLocationScore(job, profile);
   const langScore = computeLanguageScore(job, profile);
-  const otherScore = 50;
 
   const breakdown: MatchBreakdown = {
     technologies: techScore,
@@ -104,7 +113,6 @@ export function computeMatchScore(
     location: locationScore,
     cloudDevOps: cloudScore,
     languages: langScore,
-    other: otherScore,
   };
 
   const totalScore = Math.round(
@@ -113,8 +121,7 @@ export function computeMatchScore(
       seniorityScore * WEIGHTS.seniority +
       locationScore * WEIGHTS.location +
       cloudScore * WEIGHTS.cloudDevOps +
-      langScore * WEIGHTS.languages +
-      otherScore * WEIGHTS.other,
+      langScore * WEIGHTS.languages,
   );
 
   return {
@@ -140,7 +147,7 @@ function computeTechnologiesScore(
     (profile.skills ?? []).map((ps) => normalizeSkillName(ps.skill?.name ?? '')),
   );
 
-  if (jobSkills.length === 0) return 50;
+  if (jobSkills.length === 0) return NEUTRAL_SCORE;
 
   let totalWeight = 0;
   let earnedWeight = 0;
@@ -170,13 +177,14 @@ function computeTechnologiesScore(
     missing.push(jobSkill.name);
   }
 
-  if (totalWeight === 0) return 50;
+  if (totalWeight === 0) return NEUTRAL_SCORE;
   return Math.round((earnedWeight / totalWeight) * 100);
 }
 
 function computeExperienceScore(profile: ProfileWithRelations, matchedSkillCount: number): number {
   const skills = profile.skills ?? [];
-  if (skills.length === 0) return 0;
+  // Sem skills cadastradas não há como avaliar experiência: neutro, não zero.
+  if (skills.length === 0) return NEUTRAL_SCORE;
 
   const totalYears = skills.reduce((sum: number, ps) => sum + (ps.yearsExp ?? 0), 0);
   const avgYears = totalYears / skills.length;
@@ -187,7 +195,7 @@ function computeExperienceScore(profile: ProfileWithRelations, matchedSkillCount
 }
 
 function computeSeniorityScore(job: Job, profile: Profile): number {
-  if (!profile.seniority) return 50;
+  if (!profile.seniority) return NEUTRAL_SCORE;
 
   const seniorityLevels: Record<string, number> = {
     INTERN: 1,
@@ -307,7 +315,7 @@ function computeCloudDevOpsScore(
 
 function computeLanguageScore(job: Job, profile: ProfileWithRelations): number {
   const languages = profile.languages ?? [];
-  if (languages.length === 0) return 50;
+  if (languages.length === 0) return NEUTRAL_SCORE;
 
   const hasEnglish = languages.some(
     (l) =>

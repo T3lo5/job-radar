@@ -1,3 +1,5 @@
+import type { RemoteMode } from '@job-radar/shared';
+
 const BRAZILIAN_LOCATIONS = [
   'brasil',
   'brazil',
@@ -264,29 +266,49 @@ const EXCLUDED_CITIES = [
   'auckland',
 ];
 
-export function createLocationFilter(preferredLocation: string | null | undefined) {
+/**
+ * Cria o filtro de localização, guiado também pela modalidade desejada.
+ *
+ * `remotePreference` vem de `profile.remotePreference` (ProfileForm). Regra:
+ * remoto é aceito em qualquer país, porque uma vaga remota é justamente a
+ * que independe de onde você está. Só quem escolheu explicitamente
+ * presencial (ON_SITE) deixa de aceitar remoto.
+ *
+ * Antes disso, o filtro descartava por padrão 'Remote - Worldwide' e
+ * 'Anywhere' — justamente as vagas que um buscador remoto mais valoriza.
+ */
+export function createLocationFilter(
+  preferredLocation: string | null | undefined,
+  remotePreference: string | null | undefined,
+) {
   const preferred = preferredLocation?.toLowerCase().trim() || '';
+  const allowRemote = remotePreference !== 'ON_SITE';
 
-  // If no preferred location specified, use default Brazil-focused filter
-  if (!preferred) {
-    return {
-      isAllowed: (location: string | null | undefined, description?: string) =>
-        isLocationAllowed(location, description, BRAZILIAN_LOCATIONS, DEFAULT_EXCLUDED_LOCATIONS),
-    };
-  }
+  const build = (includeLocations: string[], excludeLocations: string[]) => ({
+    isAllowed: (location: string | null | undefined, description?: string, remote?: RemoteMode) =>
+      isLocationAllowed(
+        location,
+        description,
+        includeLocations,
+        excludeLocations,
+        remote,
+        allowRemote,
+      ),
+  });
 
-  // Parse the preferred location to determine what to include
+  // Sem local preferido, ou quando o preferido é o Brasil: usa a lista
+  // brasileira como fallback.
   const isBrazil =
-    preferred.includes('brasil') || preferred.includes('brazil') || preferred.includes('br');
+    !preferred ||
+    preferred.includes('brasil') ||
+    preferred.includes('brazil') ||
+    preferred.includes('br');
 
   if (isBrazil) {
-    return {
-      isAllowed: (location: string | null | undefined, description?: string) =>
-        isLocationAllowed(location, description, BRAZILIAN_LOCATIONS, DEFAULT_EXCLUDED_LOCATIONS),
-    };
+    return build(BRAZILIAN_LOCATIONS, DEFAULT_EXCLUDED_LOCATIONS);
   }
 
-  // For other countries, create a custom filter
+  // Outros países: monta a lista a partir do que o usuário digitou.
   const includeLocations = preferred
     .split(',')
     .map((l) => l.trim().toLowerCase())
@@ -295,10 +317,7 @@ export function createLocationFilter(preferredLocation: string | null | undefine
     (loc) => !includeLocations.some((inc) => loc.includes(inc) || inc.includes(loc)),
   );
 
-  return {
-    isAllowed: (location: string | null | undefined, description?: string) =>
-      isLocationAllowed(location, description, includeLocations, excludeLocations),
-  };
+  return build(includeLocations, excludeLocations);
 }
 
 function isLocationAllowed(
@@ -306,9 +325,20 @@ function isLocationAllowed(
   description: string | undefined,
   includeLocations: string[],
   excludeLocations: string[],
+  remote: RemoteMode = 'unknown',
+  allowRemote = true,
 ): boolean {
+  const isRemoteJob = remote === 'remote' || remote === 'hybrid';
+
+  // Vaga remota aceita em qualquer país. Chega antes da checagem de local
+  // porque várias fontes devolvem location vazia para vaga remota.
+  if (allowRemote && remote === 'remote') return true;
+
   // If no location provided, check description for location hints
   if (!location || location.trim() === '') {
+    // Híbrido sem cidade definida também passa quando remoto é aceito.
+    if (allowRemote && isRemoteJob) return true;
+
     if (description) {
       const descLower = description.toLowerCase();
 
@@ -375,6 +405,6 @@ export function isBrazilianLocation(
   location: string | null | undefined,
   description?: string,
 ): boolean {
-  const filter = createLocationFilter('brasil');
+  const filter = createLocationFilter('brasil', 'ON_SITE');
   return filter.isAllowed(location, description);
 }
