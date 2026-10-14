@@ -56,46 +56,61 @@ export class JobService {
     let paramIndex = 1;
 
     if (sourceId) {
-      conditions.push(`"sourceId" = $${paramIndex++}`);
+      conditions.push(`"source_id" = $${paramIndex++}`);
       params.push(sourceId);
     }
     if (status) {
-      conditions.push(`"status" = $${paramIndex++}`);
+      // Parâmetros chegam como texto: sem cast explícito, o Postgres não acha
+      // operador comparando text com a coluna enum.
+      conditions.push(`"status" = $${paramIndex++}::"JobStatus"`);
       params.push(status);
     }
     if (remote) {
-      conditions.push(`"remote" = $${paramIndex++}`);
+      conditions.push(`"remote" = $${paramIndex++}::"RemoteMode"`);
       params.push(remote);
     }
     if (seniority) {
-      conditions.push(`"seniority" = $${paramIndex++}`);
+      conditions.push(`"seniority" = $${paramIndex++}::"Seniority"`);
       params.push(seniority);
     }
     if (fromDate) {
-      conditions.push(`"collectedAt" >= $${paramIndex++}`);
+      conditions.push(`"collected_at" >= $${paramIndex++}`);
       params.push(fromDate);
     }
     if (toDate) {
-      conditions.push(`"collectedAt" <= $${paramIndex++}`);
+      conditions.push(`"collected_at" <= $${paramIndex++}`);
       params.push(toDate);
     }
 
     // Full-text search using PostgreSQL tsvector
     if (search) {
       const searchQuery = search.trim();
-      conditions.push(`"searchVector" @@ plainto_tsquery('portuguese', $${paramIndex++})`);
+      conditions.push(`"search_vector" @@ plainto_tsquery('portuguese', $${paramIndex++})`);
       params.push(searchQuery);
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const countQuery = `SELECT COUNT(*) FROM "jobs" ${whereClause}`;
+    // Colunas explícitas: `j.*` incluiria `search_vector` (tsvector), que o Prisma
+    // não consegue desserializar. Os aliases devolvem os nomes camelCase que o
+    // tipo `JobWithSourceName` e o frontend esperam.
     const dataQuery = `
-      SELECT j.*, s."name" as "sourceName"
+      SELECT
+        j."id", j."title", j."company", j."description", j."location", j."remote",
+        j."seniority",
+        j."salary_min" AS "salaryMin", j."salary_max" AS "salaryMax",
+        j."salary_currency" AS "salaryCurrency",
+        j."url", j."source_id" AS "sourceId", j."external_id" AS "externalId",
+        j."published_at" AS "publishedAt", j."collected_at" AS "collectedAt",
+        j."hash", j."status", j."raw_data" AS "rawData",
+        j."created_by" AS "createdBy", j."created_at" AS "createdAt",
+        j."updated_at" AS "updatedAt", j."source_count" AS "sourceCount",
+        s."name" AS "sourceName"
       FROM "jobs" j
-      LEFT JOIN "job_sources" s ON j."sourceId" = s."id"
+      LEFT JOIN "job_sources" s ON j."source_id" = s."id"
       ${whereClause}
-      ORDER BY j."collectedAt" DESC
+      ORDER BY j."collected_at" DESC
       LIMIT $${paramIndex++} OFFSET $${paramIndex++}
     `;
 
