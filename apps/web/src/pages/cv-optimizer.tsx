@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { applicationsApi, cvApi } from '../services/api';
+import { applicationsApi, cvApi, downloadBlob } from '../services/api';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import {
@@ -69,10 +69,13 @@ export function CvOptimizerPage() {
   const exportPdfMutation = useMutation({
     mutationFn: () =>
       cvApi.exportPdf({
-        resumeId: 'default',
         jobId: mode === 'job' ? selectedJobId : undefined,
         optimizedText: optimizedResult?.optimizedText,
       }),
+    onSuccess: (blob) => {
+      downloadBlob(blob, `cv-otimizado${mode === 'job' && selectedJobId ? '-vaga' : ''}.pdf`);
+      toast.success('PDF gerado com sucesso!');
+    },
     onError: () => toast.error('Erro ao gerar PDF'),
   });
 

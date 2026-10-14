@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   DndContext,
@@ -211,15 +211,19 @@ export function ApplicationsPage() {
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
-  // Listen for follow-up dialog open event from ApplicationCard
-  useState(() => {
-    const handler = (event: CustomEvent<{ id: string }>) => {
-      setFollowUpAppId(event.detail.id);
+  // Listen for follow-up dialog open event from ApplicationCard.
+  // Precisa ser useEffect: dentro de useState o inicializador roda uma vez e o
+  // cleanup é guardado como *valor de estado*, nunca executado — o listener
+  // sobrevive ao unmouse e rete o closure com os setters.
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ id: string }>).detail;
+      setFollowUpAppId(detail.id);
       setIsFollowUpDialogOpen(true);
     };
-    window.addEventListener('open-followup', handler as EventListener);
-    return () => window.removeEventListener('open-followup', handler as EventListener);
-  });
+    window.addEventListener('open-followup', handler);
+    return () => window.removeEventListener('open-followup', handler);
+  }, []);
 
   const applicationsList = applications?.data ?? [];
 

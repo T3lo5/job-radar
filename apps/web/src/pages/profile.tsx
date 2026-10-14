@@ -159,6 +159,16 @@ export function ProfilePage() {
     startDate: '',
     endDate: '',
   });
+  // O formulário de formação não tem inputs de data, então startDate/endDate
+  // ficam como ''. Enviar '' para um campo DateTime? faz o Prisma estourar no
+  // parse — por isso normaliza para null antes de mandar.
+  const educationPayload = () => ({
+    degree: educationForm.degree,
+    field: educationForm.field,
+    institution: educationForm.institution,
+    startDate: educationForm.startDate || null,
+    endDate: educationForm.endDate || null,
+  });
   const [showLanguageForm, setShowLanguageForm] = useState(false);
   const [editingLanguageId, setEditingLanguageId] = useState<string | null>(null);
   const [languageForm, setLanguageForm] = useState({ language: '', level: 'INTERMEDIATE' });
@@ -1046,7 +1056,7 @@ export function ProfilePage() {
                         <Button
                           type="button"
                           size="sm"
-                          onClick={() => addEducation.mutate(educationForm)}
+                          onClick={() => addEducation.mutate(educationPayload())}
                           disabled={
                             !educationForm.degree.trim() ||
                             !educationForm.field.trim() ||
@@ -1095,7 +1105,7 @@ export function ProfilePage() {
                           <div className="flex gap-2">
                             <button
                               onClick={() =>
-                                updateEducation.mutate({ id: edu.id, data: educationForm })
+                                updateEducation.mutate({ id: edu.id, data: educationPayload() })
                               }
                               className="text-success text-sm"
                             >

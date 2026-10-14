@@ -1,6 +1,6 @@
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { jobsApi, matchApi, cvApi } from '../services/api';
+import { jobsApi, matchApi, cvApi, downloadBlob } from '../services/api';
 import { sanitizeHtml } from '../lib/sanitize';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -53,10 +53,13 @@ function JobDetailContent() {
   const exportPdfMutation = useMutation({
     mutationFn: () =>
       cvApi.exportPdf({
-        resumeId: 'default', // This should come from user's default resume
         jobId: id,
         optimizedText: optimizeCvMutation.data?.optimizedText,
       }),
+    onSuccess: (blob) => {
+      downloadBlob(blob, `cv-${job?.company ?? 'vaga'}.pdf`);
+      toast.success('PDF gerado com sucesso!');
+    },
     onError: () => toast.error('Erro ao gerar PDF'),
   });
 

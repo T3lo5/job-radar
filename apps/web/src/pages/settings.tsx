@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Info, Bot, Globe, Clock, Key, ExternalLink } from 'lucide-react';
 import { aiProvidersApi, setupApi, settingsApi, adminApi, type AiProvider } from '../services/api';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -207,6 +207,18 @@ function SettingsPageContent() {
     },
   });
 
+  // `defaultValues` só é lido no primeiro render, quando a query ainda não
+  // resolveu — sem este reset o formulário mostraria os defaults e, ao salvar,
+  // sobrescreveria os valores reais do banco.
+  useEffect(() => {
+    if (cronSettings?.settings) {
+      cronForm.reset({
+        jobCollectionCron: cronSettings.settings.jobCollectionCron ?? '0 6 * * *',
+        dailyReportCron: cronSettings.settings.dailyReportCron ?? '5 18 * * *',
+      });
+    }
+  }, [cronSettings, cronForm]);
+
   const saveCron = useMutation({
     mutationFn: (data: CronFormData) => setupApi.saveCron(data),
     onSuccess: () => {
@@ -275,12 +287,13 @@ function SettingsPageContent() {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (editingProvider) {
+      // A UI diz "deixe vazio para manter", mas `...formData` já carrega
+      // `apiKey: ''` — e o schema do backend exige `min(1)`, então espalhar o
+      // form inteiro resultava em 400. A chave só vai quando preenchida.
+      const { apiKey, ...rest } = formData;
       updateMutation.mutate({
         id: editingProvider.id,
-        data: {
-          ...formData,
-          ...(formData.apiKey ? { apiKey: formData.apiKey } : {}),
-        },
+        data: apiKey ? { ...rest, apiKey } : rest,
       });
     } else {
       createMutation.mutate(formData);

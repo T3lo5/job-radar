@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { jobsApi, matchApi, applicationsApi, type Job, type MatchResult } from '../services/api';
@@ -89,23 +90,28 @@ function JobsPageContent() {
       handleApiError(error, 'createApplication', () => createApplication.mutate(jobId)),
   });
 
-  const [trackedJobs, setTrackedJobs] = useState<Set<string>>(() => {
-    const apps = existingApplications?.data ?? [];
-    return new Set(apps.map((a) => a.job.id));
-  });
+  // Derivado, não guardado em estado: o inicializador de useState rodava no
+  // primeiro render, quando `existingApplications` ainda era undefined — o Set
+  // nascia vazio e nunca sincronizava. Vagas já no quadro apareciam como "não
+  // rastreadas" e clicar gerava 409.
+  const trackedJobs = useMemo(
+    () => new Set((existingApplications?.data ?? []).map((a) => a.job.id)),
+    [existingApplications?.data],
+  );
 
   const allJobs = data?.pages.flatMap((page) => page.data) ?? [];
   const totalJobs = data?.pages[0]?.pagination.total ?? 0;
   const totalPages = data?.pages[0]?.pagination.totalPages ?? 0;
   const currentPage = data?.pages.length ?? 0;
 
-  const matchResultsMap = new Map<string, MatchResult>();
-  matchResults?.forEach((r) => matchResultsMap.set(r.job.id, r));
+  const matchResultsMap = useMemo(() => {
+    const map = new Map<string, MatchResult>();
+    matchResults?.forEach((r) => map.set(r.job.id, r));
+    return map;
+  }, [matchResults]);
 
   const handleTrack = (jobId: string) => {
-    createApplication.mutate(jobId, {
-      onSuccess: () => setTrackedJobs((prev) => new Set(prev).add(jobId)),
-    });
+    createApplication.mutate(jobId);
   };
 
   const getMatchResult = (jobId: string): MatchResult | undefined => {

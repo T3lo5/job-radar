@@ -525,10 +525,27 @@ export interface ResumeVersion {
 export const cvApi = {
   optimize: (data: { resumeId?: string; jobId?: string; jobDescription?: string }) =>
     api.post<CvOptimizeResponse>('/api/cv/optimize', data).then((r) => r.data),
-  exportPdf: (data: { resumeId: string; jobId?: string; optimizedText?: string }) =>
-    api.post('/api/cv/export-pdf', data, { responseType: 'blob' }),
+  exportPdf: (data: { resumeId?: string; jobId?: string; optimizedText?: string }) =>
+    api.post('/api/cv/export-pdf', data, { responseType: 'blob' }).then((r) => r.data as Blob),
   getVersions: (resumeId: string) =>
     api.get<ResumeVersion[]>(`/api/cv/versions/${resumeId}`).then((r) => r.data),
 };
+
+/**
+ * Dispara o download de um Blob devolvido pela API.
+ *
+ * Necessário porque `responseType: 'blob'` só entrega os bytes na memória —
+ * sem isto o PDF chega e é descartado em silêncio.
+ */
+export function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
 
 export default api;
