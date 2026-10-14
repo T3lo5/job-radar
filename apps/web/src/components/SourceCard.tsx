@@ -1,6 +1,7 @@
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { CheckCircle, AlertCircle, Zap, Database, Link, ExternalLink, Key } from 'lucide-react';
+import { sourceNeedsCredentials } from '../lib/source-credentials';
 
 interface SourceCardProps {
   source: {
@@ -29,7 +30,9 @@ const SOURCE_ICONS: Record<string, React.ReactNode> = {
 export function SourceCard({ source, onToggle, isToggling }: SourceCardProps) {
   const Icon = SOURCE_ICONS[source.id] || <Database className="h-5 w-5 text-muted-foreground" />;
 
-  const needsCredentials = ['linkedin-apify', 'adzuna', 'linkedin'].includes(source.id);
+  // `linkedin` (API guest, pública) não pede credencial — só `linkedin-apify`
+  // e `adzuna`. Ver lib/source-credentials.ts.
+  const needsCredentials = sourceNeedsCredentials(source.id);
 
   return (
     <div className="flex flex-col p-4 rounded-xl bg-surface-2 border border-border hover:border-accent/50 transition-colors">
