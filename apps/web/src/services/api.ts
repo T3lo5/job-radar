@@ -413,7 +413,57 @@ export const adminApi = {
       api.post<{ ok: boolean }>('/api/admin/adzuna-credentials', data).then((r) => r.data),
     remove: () => api.delete<{ ok: boolean }>('/api/admin/adzuna-credentials').then((r) => r.data),
   },
+  /** Custo e volume de IA agrupados por tipo de operação. */
+  getAiUsage: (days = 30) =>
+    api.get<AiUsageReport>('/api/admin/ai-usage', { params: { days } }).then((r) => r.data),
+  getAiRuns: (params: { page?: number; limit?: number; type?: string } = {}) =>
+    api
+      .get<{
+        data: AiRun[];
+        pagination: { page: number; limit: number; total: number; totalPages: number };
+      }>('/api/admin/ai-runs', { params })
+      .then((r) => r.data),
 };
+
+/** Espelha o enum AiRunType do backend. */
+export type AiRunType =
+  | 'CV_PARSE'
+  | 'REQUIREMENT_EXTRACT'
+  | 'MATCH_EXPLAIN'
+  | 'JOB_ANALYZE'
+  | 'CV_OPTIMIZE'
+  | 'SUMMARIZE'
+  | 'OTHER';
+
+export interface AiRun {
+  id: string;
+  type: AiRunType;
+  model: string;
+  promptTokens: number | null;
+  completionTokens: number | null;
+  totalTokens: number | null;
+  /** Custo real persistido pelo InstrumentedAiClient (Decimal do Prisma vira número). */
+  costUsd: number | null;
+  latencyMs: number | null;
+  status: 'PENDING' | 'SUCCESS' | 'FAILED';
+  error: string | null;
+  createdAt: string;
+}
+
+export interface AiUsageReport {
+  days: number;
+  totals: { calls: number; promptTokens: number; completionTokens: number; costUsd: number };
+  byType: Array<{
+    type: AiRunType;
+    calls: number;
+    promptTokens: number;
+    completionTokens: number;
+    costUsd: number;
+  }>;
+  models: string[];
+  /** Diferença entre o custo recalculado e o persistido (registros antigos). */
+  estimatedMissingCostUsd: number;
+}
 
 export interface JobsQueryParams {
   page?: number;

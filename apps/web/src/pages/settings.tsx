@@ -21,6 +21,7 @@ import { EmptyState } from '../components/empty-state';
 import { ErrorBoundary } from '../components/error-boundary';
 import { toast } from '../components/ui/toast';
 import { SourceCard } from '../components/SourceCard';
+import { AiUsageCard } from '../components/AiUsageCard';
 
 const cronSchema = z.object({
   jobCollectionCron: z.string().min(1),
@@ -420,192 +421,195 @@ function SettingsPageContent() {
       </div>
 
       {activeTab === 'ai' && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              <span>Provedores de IA</span>
-              <Button onClick={startCreate} size="sm">
-                + Adicionar
-              </Button>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isLoadingProviders ? (
-              <div className="space-y-3">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} className="p-4 rounded-[var(--radius-md)] border border-border">
-                    <Skeleton className="h-4 w-3/4 mb-2" />
-                    <Skeleton className="h-3 w-1/2" />
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <>
-                {providers.length === 0 && !isCreating && (
-                  <p className="text-muted-foreground mb-4">
-                    Nenhum provedor configurado. Clique em &quot;+ Adicionar&quot; para criar um.
-                  </p>
-                )}
-
-                <div className="space-y-3 mb-6">
-                  {providers.map((provider) => (
-                    <div
-                      key={provider.id}
-                      className={`p-4 rounded-lg border ${
-                        provider.isActive
-                          ? 'border-success bg-success/10'
-                          : 'border-border bg-surface'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="font-medium flex items-center gap-2">
-                            {provider.name}
-                            {provider.isActive && (
-                              <Badge variant="success" className="text-xs">
-                                Ativo
-                              </Badge>
-                            )}
-                          </div>
-                          <div className="text-sm text-muted-foreground">
-                            {provider.model} — {provider.baseUrl}
-                          </div>
-                        </div>
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => testSavedMutation.mutate(provider.id)}
-                            disabled={testSavedMutation.isPending}
-                          >
-                            {testSavedMutation.isPending ? 'Testando...' : 'Testar'}
-                          </Button>
-                          {!provider.isActive && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setActiveMutation.mutate(provider.id)}
-                              disabled={setActiveMutation.isPending}
-                            >
-                              Ativar
-                            </Button>
-                          )}
-                          <Button size="sm" variant="outline" onClick={() => startEdit(provider)}>
-                            Editar
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="danger"
-                            onClick={() => deleteMutation.mutate(provider.id)}
-                            disabled={deleteMutation.isPending}
-                          >
-                            Excluir
-                          </Button>
-                        </div>
-                      </div>
-                      {testResults[provider.id] && (
-                        <div
-                          className={`mt-2 text-sm ${testResults[provider.id].ok ? 'text-success' : 'text-error'}`}
-                        >
-                          {testResults[provider.id].ok
-                            ? '✓ Conexão OK'
-                            : `✗ Erro: ${testResults[provider.id].error}`}
-                        </div>
-                      )}
+        <div className="space-y-6">
+          <AiUsageCard />
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <span>Provedores de IA</span>
+                <Button onClick={startCreate} size="sm">
+                  + Adicionar
+                </Button>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoadingProviders ? (
+                <div className="space-y-3">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <div key={i} className="p-4 rounded-[var(--radius-md)] border border-border">
+                      <Skeleton className="h-4 w-3/4 mb-2" />
+                      <Skeleton className="h-3 w-1/2" />
                     </div>
                   ))}
                 </div>
+              ) : (
+                <>
+                  {providers.length === 0 && !isCreating && (
+                    <p className="text-muted-foreground mb-4">
+                      Nenhum provedor configurado. Clique em &quot;+ Adicionar&quot; para criar um.
+                    </p>
+                  )}
 
-                {(isCreating || editingProvider) && (
-                  <form
-                    onSubmit={handleSubmit}
-                    className="space-y-4 border-t border-slate-700 pt-4"
-                  >
-                    <h3 className="font-medium">
-                      {editingProvider ? 'Editar Provedor' : 'Novo Provedor'}
-                    </h3>
-                    <div>
-                      <label className="text-sm font-medium">Nome</label>
-                      <Input
-                        value={formData.name}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        placeholder="Ex: BAI, OpenAI, Ollama..."
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium">Base URL (endpoint completo)</label>
-                      <Input
-                        value={formData.baseUrl}
-                        onChange={(e) => setFormData({ ...formData, baseUrl: e.target.value })}
-                        placeholder="https://api.b.ai/v1/chat/completions"
-                        required
-                      />
-                      <p className="text-xs text-muted-foreground/70 mt-1">
-                        URL completa do endpoint de chat completions
-                      </p>
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium">
-                        API Key{' '}
-                        {editingProvider && (
-                          <span className="text-muted-foreground">(deixe vazio para manter)</span>
-                        )}
-                      </label>
-                      <Input
-                        type="password"
-                        value={formData.apiKey}
-                        onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
-                        placeholder="sk-..."
-                        required={!editingProvider}
-                      />
-                      <p className="text-xs text-muted-foreground/70 mt-1">
-                        Cole apenas o token, sem &quot;Bearer&quot; na frente
-                      </p>
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium">Modelo</label>
-                      <Input
-                        value={formData.model}
-                        onChange={(e) => setFormData({ ...formData, model: e.target.value })}
-                        placeholder="deepseek-v4-flash"
-                        required
-                      />
-                    </div>
-                    <div className="flex gap-2">
-                      <Button type="submit" disabled={isPending}>
-                        {isPending ? 'Salvando...' : editingProvider ? 'Atualizar' : 'Criar'}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={handleTest}
-                        disabled={
-                          testMutation.isPending ||
-                          !formData.baseUrl ||
-                          !formData.apiKey ||
-                          !formData.model
-                        }
-                      >
-                        {testMutation.isPending ? 'Testando...' : 'Testar Conexão'}
-                      </Button>
-                      <Button type="button" variant="ghost" onClick={cancelEdit}>
-                        Cancelar
-                      </Button>
-                    </div>
-                    {formTestResult && (
+                  <div className="space-y-3 mb-6">
+                    {providers.map((provider) => (
                       <div
-                        className={`text-sm ${formTestResult.ok ? 'text-success' : 'text-error'}`}
+                        key={provider.id}
+                        className={`p-4 rounded-lg border ${
+                          provider.isActive
+                            ? 'border-success bg-success/10'
+                            : 'border-border bg-surface'
+                        }`}
                       >
-                        {formTestResult.ok ? '✓ Conexão OK' : `✗ Erro: ${formTestResult.error}`}
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="font-medium flex items-center gap-2">
+                              {provider.name}
+                              {provider.isActive && (
+                                <Badge variant="success" className="text-xs">
+                                  Ativo
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="text-sm text-muted-foreground">
+                              {provider.model} — {provider.baseUrl}
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => testSavedMutation.mutate(provider.id)}
+                              disabled={testSavedMutation.isPending}
+                            >
+                              {testSavedMutation.isPending ? 'Testando...' : 'Testar'}
+                            </Button>
+                            {!provider.isActive && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setActiveMutation.mutate(provider.id)}
+                                disabled={setActiveMutation.isPending}
+                              >
+                                Ativar
+                              </Button>
+                            )}
+                            <Button size="sm" variant="outline" onClick={() => startEdit(provider)}>
+                              Editar
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="danger"
+                              onClick={() => deleteMutation.mutate(provider.id)}
+                              disabled={deleteMutation.isPending}
+                            >
+                              Excluir
+                            </Button>
+                          </div>
+                        </div>
+                        {testResults[provider.id] && (
+                          <div
+                            className={`mt-2 text-sm ${testResults[provider.id].ok ? 'text-success' : 'text-error'}`}
+                          >
+                            {testResults[provider.id].ok
+                              ? '✓ Conexão OK'
+                              : `✗ Erro: ${testResults[provider.id].error}`}
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </form>
-                )}
-              </>
-            )}
-          </CardContent>
-        </Card>
+                    ))}
+                  </div>
+
+                  {(isCreating || editingProvider) && (
+                    <form
+                      onSubmit={handleSubmit}
+                      className="space-y-4 border-t border-slate-700 pt-4"
+                    >
+                      <h3 className="font-medium">
+                        {editingProvider ? 'Editar Provedor' : 'Novo Provedor'}
+                      </h3>
+                      <div>
+                        <label className="text-sm font-medium">Nome</label>
+                        <Input
+                          value={formData.name}
+                          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                          placeholder="Ex: BAI, OpenAI, Ollama..."
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium">Base URL (endpoint completo)</label>
+                        <Input
+                          value={formData.baseUrl}
+                          onChange={(e) => setFormData({ ...formData, baseUrl: e.target.value })}
+                          placeholder="https://api.b.ai/v1/chat/completions"
+                          required
+                        />
+                        <p className="text-xs text-muted-foreground/70 mt-1">
+                          URL completa do endpoint de chat completions
+                        </p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium">
+                          API Key{' '}
+                          {editingProvider && (
+                            <span className="text-muted-foreground">(deixe vazio para manter)</span>
+                          )}
+                        </label>
+                        <Input
+                          type="password"
+                          value={formData.apiKey}
+                          onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
+                          placeholder="sk-..."
+                          required={!editingProvider}
+                        />
+                        <p className="text-xs text-muted-foreground/70 mt-1">
+                          Cole apenas o token, sem &quot;Bearer&quot; na frente
+                        </p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium">Modelo</label>
+                        <Input
+                          value={formData.model}
+                          onChange={(e) => setFormData({ ...formData, model: e.target.value })}
+                          placeholder="deepseek-v4-flash"
+                          required
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <Button type="submit" disabled={isPending}>
+                          {isPending ? 'Salvando...' : editingProvider ? 'Atualizar' : 'Criar'}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={handleTest}
+                          disabled={
+                            testMutation.isPending ||
+                            !formData.baseUrl ||
+                            !formData.apiKey ||
+                            !formData.model
+                          }
+                        >
+                          {testMutation.isPending ? 'Testando...' : 'Testar Conexão'}
+                        </Button>
+                        <Button type="button" variant="ghost" onClick={cancelEdit}>
+                          Cancelar
+                        </Button>
+                      </div>
+                      {formTestResult && (
+                        <div
+                          className={`text-sm ${formTestResult.ok ? 'text-success' : 'text-error'}`}
+                        >
+                          {formTestResult.ok ? '✓ Conexão OK' : `✗ Erro: ${formTestResult.error}`}
+                        </div>
+                      )}
+                    </form>
+                  )}
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {activeTab === 'sources' && (
