@@ -6,6 +6,15 @@ on:
   push:
     branches: [main]
 
+# Cancela runs obsoletos do mesmo ref (evita fila e ruído em pushes seguidos)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Privilégio mínimo: o workflow só precisa ler o repositório
+permissions:
+  contents: read
+
 jobs:
   quality:
     runs-on: ubuntu-latest
@@ -13,13 +22,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Fixado na mesma versão do `packageManager` para build reprodutível
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 9.15.0
+          run_install: false
 
+      # `.nvmrc` é a fonte única da verdade da versão do Node
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version-file: .nvmrc
           cache: pnpm
 
       - name: Install dependencies
@@ -33,6 +45,13 @@ jobs:
 
       - name: Format check
         run: pnpm format:check
+
+      - name: Build
+        run: pnpm build
+
+      # O build só compila: sem isto, um `dist/` vazio ou quebrado passaria
+      - name: Smoke test built API artifact
+        run: node --input-type=module -e "await import('./apps/api/dist/db/prisma.js')"
 
       - name: Test
         run: pnpm test
