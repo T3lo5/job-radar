@@ -21,7 +21,9 @@ import type { StepDependencies } from './step.js';
  * entre as três metades do sistema.
  */
 
-const prisma = new PrismaClient();
+// Sem log de query: com os testes de integração, cada statement virava
+// ruído na saída e enterrava a asserção que falhou.
+const prisma = new PrismaClient({ log: ['error'] });
 const MARCA = '__e2e_cadeia__';
 
 /** As mesmas que a extração devolve. Perfil e vaga precisam casar por nome. */
@@ -79,7 +81,10 @@ function criarOrchestrator(overrides: Partial<StepDependencies> = {}) {
     // encadear aqui dentro transformaria o teste em outra coisa e esconderia
     // justamente a separação entre passos que ele existe para verificar.
     enqueueNext: async (jobId, stepName) => {
-      await orq.enqueueJob(stepName === 'match' ? 'match-job' : 'analyze-job', { jobId });
+      const nome = stepName === 'match' ? 'match-job' : 'analyze-job';
+      await (
+        orq as unknown as { enqueueJob: (n: string, d: Record<string, unknown>) => Promise<void> }
+      ).enqueueJob(nome, { jobId });
     },
     ...overrides,
   };
@@ -87,7 +92,6 @@ function criarOrchestrator(overrides: Partial<StepDependencies> = {}) {
   return orq;
 }
 
-let userId: string;
 let profileId: string;
 let sourceId: string;
 
@@ -95,8 +99,6 @@ async function semear() {
   const user = await prisma.user.create({
     data: { email: `${MARCA}user@test.local`, password: 'x', name: 'Teste E2E' },
   });
-  userId = user.id;
-
   const profile = await prisma.profile.create({
     data: {
       userId: user.id,

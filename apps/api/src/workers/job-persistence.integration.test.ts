@@ -15,7 +15,9 @@ import { persistSourceJobs, type JobCandidate } from './job-persistence.js';
 
 // Cliente próprio: o `prisma` do app aponta para o banco de desenvolvimento,
 // e estes testes apagam vagas.
-const prisma = new PrismaClient();
+// Sem log de query: com os testes de integração, cada statement virava
+// ruído na saída e enterrava a asserção que falhou.
+const prisma = new PrismaClient({ log: ['error'] });
 
 const SOURCE_A = 'test-lote-a';
 const SOURCE_B = 'test-lote-b';

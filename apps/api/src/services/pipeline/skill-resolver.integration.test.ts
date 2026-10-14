@@ -10,7 +10,9 @@ import { resolveSkills, dedupeSkillNames } from './skill-resolver.js';
  * Aqui a pergunta é direta: depois de resolver, existem duas linhas com o mesmo
  * nome ignorando caixa?
  */
-const prisma = new PrismaClient();
+// Sem log de query: com os testes de integração, cada statement virava
+// ruído na saída e enterrava a asserção que falhou.
+const prisma = new PrismaClient({ log: ['error'] });
 
 // Skills de teste com prefixo próprio, para nunca colidir com o catálogo real.
 const PREFIXO = '__test_resolver_';
