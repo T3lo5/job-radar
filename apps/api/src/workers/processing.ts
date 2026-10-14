@@ -28,8 +28,16 @@ export const processingQueue = new Queue(PROCESSING_QUEUE, {
  * recoletar + "processar todas" rodava a IA de novo e de novo pelo mesmo job,
  * e o retry do BullMQ não reaproveitava nada. Com o id fixo, o BullMQ
  * deduplica enquanto o job estiver na fila.
+ *
+ * O separador é `-`, e não `:`. O BullMQ usa `:` como delimitador nas chaves
+ * do Redis e rejeita ID customizado que o contenha — `addBulk` com
+ * `extract-job:<id>` estourava "Custom Id cannot contain :" e o
+ * POST /api/admin/process-all respondia 500.
  */
-const pipelineJobId = (name: string, jobId: string) => `${name}:${jobId}`;
+const pipelineJobId = (name: string, jobId: string) => `${name}-${jobId}`;
+
+/** Exportado para teste: o formato do ID é contrato com o BullMQ. */
+export const __testPipelineJobId = pipelineJobId;
 
 export async function enqueueExtraction(jobId: string): Promise<void> {
   await processingQueue.add(
