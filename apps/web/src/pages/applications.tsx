@@ -17,6 +17,7 @@ import { Plus, ExternalLink, Calendar, Bell } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { applicationsApi, jobsApi } from '../services/api';
 import { handleApiError } from '../services/error-handler';
+import { sanitizeHtml } from '../lib/sanitize';
 import { toast } from '../components/ui/toast';
 import { ErrorBoundary } from '../components/error-boundary';
 import { EmptyState } from '../components/empty-state';
@@ -115,6 +116,7 @@ export function ApplicationsPage() {
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
   const [selectedApplication, setSelectedApplication] = useState<Application | null>(null);
   const [descriptionDraft, setDescriptionDraft] = useState('');
+  const [isEditingDescription, setIsEditingDescription] = useState(false);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -189,6 +191,8 @@ export function ApplicationsPage() {
         };
       });
       setDescriptionDraft(updatedJob.description || '');
+      // Volta para leitura mostrando o texto novo.
+      setIsEditingDescription(false);
       toast.success('Descrição atualizada');
     },
     onError: (error) => handleApiError(error, 'updateDescription'),
@@ -263,6 +267,9 @@ export function ApplicationsPage() {
   function handleCardClick(application: Application) {
     setSelectedApplication(application);
     setDescriptionDraft(application.job.description || '');
+    // O dialogo abre em LEITURA: antes a descricao aparecia num textarea com
+    // o HTML cru (`<p><strong>...`), ilegivel para quem so quer reler a vaga.
+    setIsEditingDescription(false);
     setIsDetailDialogOpen(true);
   }
 
@@ -450,6 +457,7 @@ export function ApplicationsPage() {
             if (!open) {
               setSelectedApplication(null);
               setDescriptionDraft('');
+              setIsEditingDescription(false);
             }
           }}
         >
@@ -479,29 +487,61 @@ export function ApplicationsPage() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <label className="text-sm font-medium text-muted-foreground">Descrição</label>
-                    {descriptionDraft !== (selectedApplication.job.description || '') && (
+                    {isEditingDescription ? (
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setDescriptionDraft(selectedApplication.job.description || '');
+                            setIsEditingDescription(false);
+                          }}
+                        >
+                          Cancelar
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={() =>
+                            selectedApplication &&
+                            updateDescriptionMutation.mutate({
+                              jobId: selectedApplication.job.id,
+                              description: descriptionDraft,
+                            })
+                          }
+                          disabled={
+                            updateDescriptionMutation.isPending ||
+                            descriptionDraft === (selectedApplication.job.description || '')
+                          }
+                        >
+                          {updateDescriptionMutation.isPending ? 'Salvando...' : 'Salvar descrição'}
+                        </Button>
+                      </div>
+                    ) : (
                       <Button
                         size="sm"
-                        onClick={() =>
-                          selectedApplication &&
-                          updateDescriptionMutation.mutate({
-                            jobId: selectedApplication.job.id,
-                            description: descriptionDraft,
-                          })
-                        }
-                        disabled={updateDescriptionMutation.isPending}
+                        variant="outline"
+                        onClick={() => setIsEditingDescription(true)}
                       >
-                        {updateDescriptionMutation.isPending ? 'Salvando...' : 'Salvar descrição'}
+                        Editar
                       </Button>
                     )}
                   </div>
-                  <textarea
-                    value={descriptionDraft}
-                    onChange={(e) => setDescriptionDraft(e.target.value)}
-                    rows={6}
-                    className="scrollbar-thin flex w-full rounded-[var(--radius-sm)] border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
-                    placeholder="Cole ou escreva a descrição da vaga..."
-                  />
+                  {isEditingDescription ? (
+                    <textarea
+                      value={descriptionDraft}
+                      onChange={(e) => setDescriptionDraft(e.target.value)}
+                      rows={10}
+                      className="scrollbar-thin flex w-full rounded-[var(--radius-sm)] border border-border bg-surface px-3 py-2 font-mono text-xs text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+                      placeholder="Cole ou escreva a descrição da vaga..."
+                    />
+                  ) : (
+                    <div
+                      className="whitespace-pre-wrap text-sm max-h-96 overflow-y-auto rounded-[var(--radius-sm)] border border-border bg-surface p-3"
+                      dangerouslySetInnerHTML={{
+                        __html: sanitizeHtml(selectedApplication.job.description || ''),
+                      }}
+                    />
+                  )}
                 </div>
                 {selectedApplication.notes && (
                   <div className="space-y-2">
