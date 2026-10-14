@@ -43,7 +43,7 @@ O **Job Radar** é uma aplicação completa que:
 
 **Tecnologias:**
 
-- **Backend:** Node.js 20 + Fastify + TypeScript + Prisma ORM
+- **Backend:** Node.js 22 + Fastify + TypeScript + Prisma ORM
 - **Banco:** PostgreSQL 16 (dados) + Redis 7 + BullMQ (filas)
 - **IA:** provedor configurável pela UI (OpenAI, Anthropic, DeepSeek, Gemini, Ollama — qualquer API compatível com OpenAI)
 - **Frontend:** React 18 + Vite + Tailwind CSS + Radix UI
@@ -59,7 +59,7 @@ O **Job Radar** é uma aplicação completa que:
 | O que instalar              | Para que serve             | Como instalar                       |
 | --------------------------- | -------------------------- | ----------------------------------- |
 | **Git**                     | Baixar o projeto           | https://git-scm.com/downloads       |
-| **Node.js 20+**             | O motor que roda o sistema | https://nodejs.org/                 |
+| **Node.js 22+**             | O motor que roda o sistema | https://nodejs.org/                 |
 | **pnpm 9**                  | Gerenciador de pacotes     | `npm i -g pnpm@9.15.0`              |
 | **Docker + Docker Compose** | Banco de dados e filas     | https://docs.docker.com/get-docker/ |
 

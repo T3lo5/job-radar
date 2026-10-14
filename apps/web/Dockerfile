@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 # ---- 1. deps ----
-FROM node:20-alpine AS deps
+FROM node:22-alpine AS deps
 RUN corepack enable
 WORKDIR /app
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./

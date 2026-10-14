@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 # ---- 1. deps: instala dependências de todo o workspace ----
-FROM node:20-alpine AS deps
+FROM node:22-alpine AS deps
 RUN corepack enable
 WORKDIR /app
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
@@ -36,7 +36,7 @@ EXPOSE 3001
 CMD ["pnpm", "dev"]
 
 # ---- 4. prod: node com dist compilado ----
-FROM node:20-alpine AS prod
+FROM node:22-alpine AS prod
 RUN corepack enable
 ENV NODE_ENV=production
 WORKDIR /app

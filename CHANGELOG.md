@@ -4,6 +4,11 @@ Formato inspirado em [Keep a Changelog](https://keepachangelog.com/). Versões e
 
 ## [Unreleased]
 
+### Corrigido
+
+- Piso Node >= 22.19 (`undici@8` via jsdom exige; CI em Node 20 quebrava
+  os testes web com `webidl.util.markAsUncloneable is not a function`)
+
 ## [0.1.0] - 2026-10-14
 
 ### Adicionado

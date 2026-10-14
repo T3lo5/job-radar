@@ -46,6 +46,10 @@ log "Checking dependencies..."
 command -v pnpm >/dev/null 2>&1 || { error "pnpm not found. Install with: npm i -g pnpm"; exit 1; }
 command -v docker >/dev/null 2>&1 || { error "docker not found."; exit 1; }
 command -v docker compose >/dev/null 2>&1 || { error "docker compose not found."; exit 1; }
+# Piso Node 22.19: o undici@8 (via jsdom) chama API interna que não existe no
+# Node 20 — sem esta trava, a API quebra no boot e os testes web no jsdom com
+# "webidl.util.markAsUncloneable is not a function", sem pista da causa.
+node -e "const [m, n] = process.versions.node.split('.').map(Number); if (m < 22 || (m === 22 && n < 19)) { console.error('Node ' + process.versions.node + ' detectado; precisa de >= 22.19'); process.exit(1); }" || exit 1
 success "Dependencies OK"
 
 # Install pnpm dependencies if node_modules missing
