@@ -16,6 +16,8 @@ Formato inspirado em [Keep a Changelog](https://keepachangelog.com/). Versões e
 ### Corrigido
 
 - IDs de job do pipeline com `:` (BullMQ rejeita; `process-all` dava 500)
+- CI gera o cliente Prisma e builda o `shared` antes do typecheck (clone
+  fresco quebrava com ~70 erros em cascata); CI também roda em tags `v*`
 - Busca do Indeed Brasil usava `/vagas` (404 sempre) em vez de `/jobs`
 - Selo "Requer credenciais" indevido no LinkedIn público
 - Edição de perfil: datas vazias davam 400; salário com ponto de milhar gravava errado; "aplicar CV" sobrescrevia título/resumo; skill duplicava por caixa
