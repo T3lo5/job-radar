@@ -19,6 +19,28 @@ jobs:
   quality:
     runs-on: ubuntu-latest
 
+    # Os testes de integração da coleta rodam contra Postgres de verdade: eles
+    # verificam o que uma dupla não reproduz — enum do banco, constraint
+    # @unique, `skipDuplicates` sob concorrência. Sem o serviço, o teste falha
+    # em vez de pular: pular seria CI verde sem verificar nada.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: jobradar
+          POSTGRES_PASSWORD: jobradar
+          POSTGRES_DB: jobradar_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U jobradar -d jobradar_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      TEST_DATABASE_URL: postgresql://jobradar:jobradar@localhost:5432/jobradar_test
+
     steps:
       - uses: actions/checkout@v4
 
@@ -36,6 +58,11 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Migrate test database
+        run: pnpm --filter @job-radar/api exec prisma migrate deploy
+        env:
+          DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
 
       - name: Lint
         run: pnpm lint
