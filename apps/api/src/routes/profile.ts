@@ -407,27 +407,23 @@ export async function profileRoutes(app: FastifyInstance) {
   );
 
   // Project endpoints
-  app.post(
-    '/api/profile/projects',
-    { schema: { body: projectSchema } },
-    async (request, reply) => {
-      const profile = await prisma.profile.findFirst();
-      if (!profile) {
-        return reply.status(404).send({ error: 'Profile not found' });
-      }
+  app.post('/api/profile/projects', { schema: { body: projectSchema } }, async (request, reply) => {
+    const profile = await prisma.profile.findFirst();
+    if (!profile) {
+      return reply.status(404).send({ error: 'Profile not found' });
+    }
 
-      const data = request.body as z.infer<typeof projectSchema>;
-      const project = await prisma.project.create({
-        data: {
-          profileId: profile.id,
-          ...data,
-          skills: data.skills ?? [],
-        },
-      });
+    const data = request.body as z.infer<typeof projectSchema>;
+    const project = await prisma.project.create({
+      data: {
+        profileId: profile.id,
+        ...data,
+        skills: data.skills ?? [],
+      },
+    });
 
-      return reply.status(201).send(project);
-    },
-  );
+    return reply.status(201).send(project);
+  });
 
   app.put(
     '/api/profile/projects/:id',

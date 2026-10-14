@@ -1,16 +1,16 @@
-import { type ButtonHTMLAttributes, forwardRef } from 'react'
-import { Slot } from '@radix-ui/react-slot'
-import { cn } from '../../lib/utils/cn'
+import { type ButtonHTMLAttributes, forwardRef } from 'react';
+import { Slot } from '@radix-ui/react-slot';
+import { cn } from '../../lib/utils/cn';
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger'
-  size?: 'sm' | 'md' | 'lg' | 'icon'
-  asChild?: boolean
+  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
+  size?: 'sm' | 'md' | 'lg' | 'icon';
+  asChild?: boolean;
 }
 
 const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant = 'primary', size = 'md', asChild = false, ...props }, ref) => {
-    const Comp = asChild ? Slot : 'button'
+    const Comp = asChild ? Slot : 'button';
     return (
       <Comp
         className={cn(
@@ -33,10 +33,10 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         ref={ref}
         {...props}
       />
-    )
+    );
   },
-)
+);
 
-Button.displayName = 'Button'
+Button.displayName = 'Button';
 
-export { Button }
+export { Button };

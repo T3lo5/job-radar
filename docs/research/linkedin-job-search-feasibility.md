@@ -10,7 +10,7 @@
 
 **Resposta curta:** não existe, em 2026-09, nenhum caminho gratuito, oficial e ToS-clean que entregue as duas categorias de forma programática.
 
-- **(a) Vagas oficiais (LinkedIn Jobs):** existe um *Job Posting API* (write-only — para ATS postarem vagas no LinkedIn) e um ecossistema de Talent Solutions voltado a parceiros contratados. **Não existe endpoint público de leitura ("Job Search API") aberto a terceiros.** Histórico: a Talent Solutions Job Search API foi descontinuada em 2024.
+- **(a) Vagas oficiais (LinkedIn Jobs):** existe um _Job Posting API_ (write-only — para ATS postarem vagas no LinkedIn) e um ecossistema de Talent Solutions voltado a parceiros contratados. **Não existe endpoint público de leitura ("Job Search API") aberto a terceiros.** Histórico: a Talent Solutions Job Search API foi descontinuada em 2024.
 - **(b) Vagas como user posts:** não há API que exponha o feed de posts de usuários nem permita busca por "vagas" em posts. O "Sign In with LinkedIn" (OIDC) devolve apenas perfil leve (`sub`, `name`, `email`, `picture`); nada de feed, posts, conexões ou busca.
 
 Conclusão prática: um tracker gratuito e ToS-clean precisa ou (i) depender de uma fonte parceira que já negociou acesso, ou (ii) usar uma fonte terceira agregadora (Google Jobs via `site:linkedin.com/jobs/...`, Adzuna, etc.) que consome o índice público por vias legítimas. Fazer scraping das páginas HTML do LinkedIn viola o robots.txt (`Disallow: /search*`, `Disallow: /jobs?runSearch*`, `Disallow: /voyager/api`, `Disallow: /feed/update/`) e o User Agreement §8.2 (proíbe scraping/robôs).
@@ -26,8 +26,9 @@ A Microsoft Learn hospeda três áreas de APIs LinkedIn: **Marketing**, **Talent
 **Marketing API** (https://learn.microsoft.com/en-us/linkedin/marketing/quick-start): cobre Advertising, Community Management (posts orgânicos de páginas), Lead Sync, Conversions, Events, Matched Audiences. **Nenhuma superfície de leitura de jobs.** Posts que aparecem são os de Company Pages administradas pelo app autenticado — não o feed pessoal de usuários.
 
 **Talent Solutions API** (https://learn.microsoft.com/en-us/linkedin/talent/): categoria "**Job Posting**" é a única relacionada a vagas. Inclui:
-- *Job Posting API* — **write-only** (criar/atualizar vagas de clientes ATS no LinkedIn). https://learn.microsoft.com/en-us/linkedin/talent/job-postings/api/overview
-- *Apply Connect*, *Apply with LinkedIn*, *Recruiter System Connect*, *CRM Connect* — fluxos de aplicação/sincronização de candidatos.
+
+- _Job Posting API_ — **write-only** (criar/atualizar vagas de clientes ATS no LinkedIn). https://learn.microsoft.com/en-us/linkedin/talent/job-postings/api/overview
+- _Apply Connect_, _Apply with LinkedIn_, _Recruiter System Connect_, _CRM Connect_ — fluxos de aplicação/sincronização de candidatos.
 - Nenhum endpoint público de "search jobs" exposto a terceiros.
 
 **Consumer Solutions API** (https://learn.microsoft.com/en-us/linkedin/consumer/): "Sign In with LinkedIn" (OIDC) + "Share on LinkedIn" + Plugins. Limitada a autenticação de membros e publicação de conteúdo. Não há endpoint de feed/search.
@@ -150,11 +151,11 @@ Fonte: https://www.linkedin.com/robots.txt (acessado 2026-09-02)
 2. **Não existe Feed/Search API público para user posts.** O conteúdo de feed existe, mas não há como consultá-lo programaticamente.
 3. **robots.txt bloqueia /search, /jobs?runSearch, /jsearch, /voyager/api, /feed/update/** para todos os UAs generalistas. Burlar configura §8.2 do User Agreement e §3.1.16/24 da API ToS.
 4. **Crawling Terms** exigem que dados coletados sirvam **apenas a um search engine público aprovado** e proíbem (a) agregação para terceiros, (b) uso em "competitive service" e (c) transferência em bulk.
-5. **API ToS §3.1.17** explicitamente restringe uso de Content para "determining eligibility for … employment" sem permissão escrita — risco direto para um *match score* de emprego.
+5. **API ToS §3.1.17** explicitamente restringe uso de Content para "determining eligibility for … employment" sem permissão escrita — risco direto para um _match score_ de emprego.
 6. **API ToS §3.1.8** proíbe agregar e redistribuir "social activity, such as posts, likes, or shares" — collide com o caso (b) "vagas como user posts".
 7. **Storage** (§4): não se pode armazenar Content (incluindo posts/likes/job listings), exceto tokens. Mesmo para Profile Data permitido, há exclusão de "job listings" e "network updates".
 8. **Self-serve limits** (100k lifetime users / 100k calls/day) são teto de produto, não de uso interno — usar o token de um único membro para puxar feed pessoal via qualquer call ainda cai em §3.1.7 ("more Content than minimally required") e §3.1.8.
-9. **Enforcement histórico:** a LinkedIn processa agressivamente scrapers (casos públicos: *hiQ Labs v. LinkedIn*, 2022) e mantém bans por fingerprint + authwall.
+9. **Enforcement histórico:** a LinkedIn processa agressivamente scrapers (casos públicos: _hiQ Labs v. LinkedIn_, 2022) e mantém bans por fingerprint + authwall.
 
 ---
 
@@ -162,11 +163,11 @@ Fonte: https://www.linkedin.com/robots.txt (acessado 2026-09-02)
 
 ### 6.1. Veredito
 
-| Categoria | Viável grátis | Viável ToS-clean | API oficial existe |
-|---|---|---|---|
-| **(a) LinkedIn Jobs** (páginas oficiais) | Não (sem API) | Não (sem API) | **Não** (read API pública não existe; Job Posting API é write-only e partner-gated, fechado para novos parceiros) |
-| **(b) Vagas como user posts** | Não (sem API) | Não (sem API) | **Não** (nenhuma API de feed/search exposta a terceiros) |
-| **Cobertura conjunta (a) + (b)** | Não | Não | — |
+| Categoria                                | Viável grátis | Viável ToS-clean | API oficial existe                                                                                                |
+| ---------------------------------------- | ------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------- |
+| **(a) LinkedIn Jobs** (páginas oficiais) | Não (sem API) | Não (sem API)    | **Não** (read API pública não existe; Job Posting API é write-only e partner-gated, fechado para novos parceiros) |
+| **(b) Vagas como user posts**            | Não (sem API) | Não (sem API)    | **Não** (nenhuma API de feed/search exposta a terceiros)                                                          |
+| **Cobertura conjunta (a) + (b)**         | Não           | Não              | —                                                                                                                 |
 
 A tentativa de obter **qualquer uma** das duas categorias via scraping de páginas HTML, via `voyager/api` reverso, ou via sessão autenticada de membro além do escopo do Sign In, **viola simultaneamente** o robots.txt, o User Agreement §8.2, a API ToS §3.1.16/24 e os Crawling Terms.
 
@@ -174,7 +175,7 @@ A tentativa de obter **qualquer uma** das duas categorias via scraping de págin
 
 Se o objetivo é cobrir vagas LinkedIn **dentro da lei e do ToS**, as opções reais são:
 
-1. **Google Jobs / Bing index (ToS-clean para o tracker):** Google expõe `site:linkedin.com/jobs/view/...` em seu índice; serviços como SerpAPI, Google Custom Search (com `site:`) ou Bing Webmaster são caminhos indiretos. É a rota usada por Adzuna, RemoteOK, etc. *Atenção: cada provedor tem seus próprios ToS; a fonte primária dos dados continua sendo a página pública do LinkedIn, mas o coletor não fala diretamente com o LinkedIn.*
+1. **Google Jobs / Bing index (ToS-clean para o tracker):** Google expõe `site:linkedin.com/jobs/view/...` em seu índice; serviços como SerpAPI, Google Custom Search (com `site:`) ou Bing Webmaster são caminhos indiretos. É a rota usada por Adzuna, RemoteOK, etc. _Atenção: cada provedor tem seus próprios ToS; a fonte primária dos dados continua sendo a página pública do LinkedIn, mas o coletor não fala diretamente com o LinkedIn._
 2. **Parceiros agregadores com contrato (pagos):** Adzuna, Theirstack, jooble, etc. Eles negociaram acesso e redistribuem. Não é "free" mas é o caminho ToS-clean em escala.
 3. **Tornar-se parceiro LinkedIn Talent Solutions** (pago, NDA): acesso a Job Posting API e CRM Connect. Viável só se o produto virar ATS ou plataforma de RH. Para um tracker pessoal: fora de escopo.
 4. **Ingest manual por URL de vaga específica** (share de vaga individual pelo usuário): baixo volume, ToS-clean (é o "Share" oficial), mas não automatiza "busca".
@@ -203,7 +204,7 @@ Para o projeto `job-radar`:
 9. https://learn.microsoft.com/en-us/linkedin/consumer/integrations/self-serve/sign-in-with-linkedin-v2 — Sign In with LinkedIn via OIDC.
 10. https://learn.microsoft.com/en-us/linkedin/shared/authentication/authorization-code-flow — 3-legged OAuth (atualizado 2026-05-15).
 
-> **Observação sobre ausência de fonte:** a Talent Solutions historicamente ofereceu uma *Job Search API*; o produto foi descontinuado e o link de documentação removido da Microsoft Learn antes de 2024. A página oficial atual (https://learn.microsoft.com/en-us/linkedin/talent/) lista Apply Connect, Apply with LinkedIn, Job Posting, CRM Connect, Recruiter System Connect — nenhuma "Job Search API". Isso é evidência indireta de que não há produto público equivalente.
+> **Observação sobre ausência de fonte:** a Talent Solutions historicamente ofereceu uma _Job Search API_; o produto foi descontinuado e o link de documentação removido da Microsoft Learn antes de 2024. A página oficial atual (https://learn.microsoft.com/en-us/linkedin/talent/) lista Apply Connect, Apply with LinkedIn, Job Posting, CRM Connect, Recruiter System Connect — nenhuma "Job Search API". Isso é evidência indireta de que não há produto público equivalente.
 
 ---
 
@@ -226,22 +227,23 @@ Para o projeto `job-radar`:
 
 Lista representativa (top por popularidade no Store, acessado 2026-09-02 — `apify.com/store`):
 
-| Categoria | Actor | Usuários | Preço | Modelo |
-|---|---|---|---|---|
-| **LinkedIn Jobs** | `curious_coder/linkedin-jobs-scraper` | 145.863 | USD 1,00/1k jobs | pay per event |
-| LinkedIn Jobs | `cheap_scraper/linkedin-job-scraper` (Pay Per Result) | 48.000 | (variável) | pay per result |
-| LinkedIn Jobs | `valig/linkedin-jobs-scraper` | 22.000 | USD 0,40/1k jobs | pay per event |
-| LinkedIn Jobs | `worldunboxer/rapid-linkedin-scraper` | 15.000 | USD 0,45/1k jobs | pay per event |
-| LinkedIn Jobs | `apimaestro/linkedin-jobs-scraper-api` (No Cookies) | 4.700 | (variável) | pay per event |
-| LinkedIn Jobs (busca avançada) | `curious_coder/linkedin-jobs-search-scraper` | 4.200 | (variável) | pay per event |
-| **LinkedIn Posts — Search** | `harvestapi/linkedin-post-search` (No Cookies) | 25.758 | USD 1,50/1k posts | pay per event |
-| LinkedIn Posts — Search | `apimaestro/linkedin-posts-search-scraper-no-cookies` | 12.000 | (variável) | pay per event |
-| LinkedIn Posts — Profile | `apimaestro/linkedin-profile-posts` (No Cookies) | 22.000 | (variável) | pay per event |
-| LinkedIn Posts — Profile | `harvestapi/linkedin-profile-posts` (No Cookies) | 33.000 | (variável) | pay per event |
-| LinkedIn Posts — Profile | `supreme_coder/linkedin-post` (No cookies) | 16.000 | (variável) | pay per event |
-| LinkedIn Company Posts | `harvestapi/linkedin-company-posts` (No Cookies) | 11.000 | (variável) | pay per event |
+| Categoria                      | Actor                                                 | Usuários | Preço             | Modelo         |
+| ------------------------------ | ----------------------------------------------------- | -------- | ----------------- | -------------- |
+| **LinkedIn Jobs**              | `curious_coder/linkedin-jobs-scraper`                 | 145.863  | USD 1,00/1k jobs  | pay per event  |
+| LinkedIn Jobs                  | `cheap_scraper/linkedin-job-scraper` (Pay Per Result) | 48.000   | (variável)        | pay per result |
+| LinkedIn Jobs                  | `valig/linkedin-jobs-scraper`                         | 22.000   | USD 0,40/1k jobs  | pay per event  |
+| LinkedIn Jobs                  | `worldunboxer/rapid-linkedin-scraper`                 | 15.000   | USD 0,45/1k jobs  | pay per event  |
+| LinkedIn Jobs                  | `apimaestro/linkedin-jobs-scraper-api` (No Cookies)   | 4.700    | (variável)        | pay per event  |
+| LinkedIn Jobs (busca avançada) | `curious_coder/linkedin-jobs-search-scraper`          | 4.200    | (variável)        | pay per event  |
+| **LinkedIn Posts — Search**    | `harvestapi/linkedin-post-search` (No Cookies)        | 25.758   | USD 1,50/1k posts | pay per event  |
+| LinkedIn Posts — Search        | `apimaestro/linkedin-posts-search-scraper-no-cookies` | 12.000   | (variável)        | pay per event  |
+| LinkedIn Posts — Profile       | `apimaestro/linkedin-profile-posts` (No Cookies)      | 22.000   | (variável)        | pay per event  |
+| LinkedIn Posts — Profile       | `harvestapi/linkedin-profile-posts` (No Cookies)      | 33.000   | (variável)        | pay per event  |
+| LinkedIn Posts — Profile       | `supreme_coder/linkedin-post` (No cookies)            | 16.000   | (variável)        | pay per event  |
+| LinkedIn Company Posts         | `harvestapi/linkedin-company-posts` (No Cookies)      | 11.000   | (variável)        | pay per event  |
 
 Observações diretas dos READMEs:
+
 - Quase todos os Actors de Posts/Profiles do top do ranking são **"No Cookies"** ou **"No Login"** — a infraestrutura (proxies residenciais e engenharia reversa) é operada pelo Creator, **não pelo usuário final**, o que reduz a chance de ban da conta do usuário. Mas o risco contratual não desaparece.
 - O `curious_coder/linkedin-jobs-scraper` (README lido em 2026-09-02) declara explicitamente: "Linkedin limits number of jobs per search to 1000" e oferece "Split search urls by location" como contorno. Os filtros "clássicos" (Experience level, Job type, Workplace) foram descontinuados pelo LinkedIn em agosto de 2026 (LinkedIn AI search) e o Actor oferece um modo "Auto convert to AI search" que injeta os filtros antigos como texto em linguagem natural no `keywords` — sinal de que **a engenharia reversa é continuamente quebrada** e os Actors têm que se adaptar.
 - O `harvestapi/linkedin-post-search` retorna até ~400-500 posts por query, suporta busca booleana (AND/OR/NOT — alinhado à `https://www.linkedin.com/help/linkedin/answer/a524335`), e pode opcionalmente raspar reactions e comments como items extras (cada um cobrado como post). O README termina com o disclaimer padrão: "This Actor is an independent tool and is not affiliated with, endorsed by, or sponsored by LinkedIn Corporation."
@@ -269,8 +271,8 @@ Documentos lidos (acessados 2026-09-02): `docs.apify.com/legal/general-terms-and
 3. **Actor Terms §7.1**: indenização do Creator do Actor pelo Usuário; o Creator não é "Subprocessor" da Apify e opera independentemente.
 4. **Standard Actor Contract §2.1**: "You are solely responsible for any data, input, or parameters provided by you when using an Actor … and for how you use any … Actor Outputs. … **It is your responsibility to ensure that your use of Actor Output complies with applicable laws and the third-party intellectual property rights.**" — esta é a cláusula que mais importa: o Usuário é o único responsável pela legalidade do uso do output.
 5. **Standard Actor Contract §8.1** (limitação de responsabilidade do Creator): "CREATOR'S AGGREGATE LIABILITY TO YOU FOR ANY CLAIM … SHALL NOT EXCEED **USD 100**" — mesmo se o Creator for encontrado, a recuperação máxima é USD 100. O resto é absorvido pelo Usuário.
-6. **Acceptable Use Policy §2.1.10**: "engaging in activities that contravene applicable laws, regulations, or the rights of any third party" é Prohibited Activity. A Apify **reserva-se o direito** (§3.1) de bloquear ou remover o Usuário/ator não-compliance "without notice" — mas isso é discricionário, não obrigatório. Em outras palavras, a AUP dá à Apify uma alavanca para *despublicar* um Actor que esteja chamando atenção, mas não obriga a Apify a revisar preventivamente.
-7. **Standard Actor Contract §9.4 + §10.6**: "Apify is not a party to this Contract and bears no liability arising from it." — a Apify, como plataforma, é estruturalmente uma *pass-through*.
+6. **Acceptable Use Policy §2.1.10**: "engaging in activities that contravene applicable laws, regulations, or the rights of any third party" é Prohibited Activity. A Apify **reserva-se o direito** (§3.1) de bloquear ou remover o Usuário/ator não-compliance "without notice" — mas isso é discricionário, não obrigatório. Em outras palavras, a AUP dá à Apify uma alavanca para _despublicar_ um Actor que esteja chamando atenção, mas não obriga a Apify a revisar preventivamente.
+7. **Standard Actor Contract §9.4 + §10.6**: "Apify is not a party to this Contract and bears no liability arising from it." — a Apify, como plataforma, é estruturalmente uma _pass-through_.
 
 **Conclusão jurídica:** a Apify não é um escudo. Ela é uma infraestrutura que **desloca explicitamente o risco para o Usuário** via General Terms, Actor Terms e Standard Actor Contract. O marketing do Apify como "marketplace de tools" e a sofisticação técnica dos Actors não mudam quem responde se a LinkedIn vier com cease & desist + lawsuit.
 
@@ -304,16 +306,16 @@ Reportado em `linkedinsider.blog/linkedin-scraping-tools-safety` (2026-05-29, se
 
 ### 8.6. Riscos conhecidos e qualidade dos dados
 
-| Risco | Probabilidade | Severidade | Mitigação possível |
-|---|---|---|---|
-| **Banimento de contas LinkedIn** (do pool do Creator) | Alta | Baixa-média para o Usuário (no modelo No-Cookies) | nenhuma — o Creator absorve |
-| **Cease & desist da LinkedIn ao Usuário** | Média | Alta | baixa probabilidade se não houver armazenamento em bulk; mas a Apify não te blinda |
-| **Lawsuit da LinkedIn ao Usuário** (modelo Proxycurl) | Baixa (usuário individual) / Média (produto comercial) | Muito alta (custos, injunção) | evitar armazenamento e redistribuição |
-| **Cessar-e-desist ao Creator do Actor** | Alta (se o Actor escalar) | Média (Apify pode despublicar) | nenhuma para o Usuário |
-| **Actor quebrando por mudança do LinkedIn** | Alta | Média (downtime + dados incompletos) | multi-source (Google Jobs + Adzuna) |
-| **Dados incompletos / desatualizados / inventados** | Média-alta | Média (depende do uso) | verificar contra página LinkedIn real |
-| **Violação de LGPD / GDPR** | Média (se dados de candidatos UE forem coletados e armazenados) | Alta (multas, base legal fraca) | exige base legal (consentimento?) e DPIA — não é "free" |
-| **Violação de "competitive service"** (Crawling Terms §1) | Média | Alta | se o tracker virar "aplicativo de busca de emprego", arrisca §3.1.17 da API ToS (mesmo sem API) |
+| Risco                                                     | Probabilidade                                                   | Severidade                                        | Mitigação possível                                                                              |
+| --------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| **Banimento de contas LinkedIn** (do pool do Creator)     | Alta                                                            | Baixa-média para o Usuário (no modelo No-Cookies) | nenhuma — o Creator absorve                                                                     |
+| **Cease & desist da LinkedIn ao Usuário**                 | Média                                                           | Alta                                              | baixa probabilidade se não houver armazenamento em bulk; mas a Apify não te blinda              |
+| **Lawsuit da LinkedIn ao Usuário** (modelo Proxycurl)     | Baixa (usuário individual) / Média (produto comercial)          | Muito alta (custos, injunção)                     | evitar armazenamento e redistribuição                                                           |
+| **Cessar-e-desist ao Creator do Actor**                   | Alta (se o Actor escalar)                                       | Média (Apify pode despublicar)                    | nenhuma para o Usuário                                                                          |
+| **Actor quebrando por mudança do LinkedIn**               | Alta                                                            | Média (downtime + dados incompletos)              | multi-source (Google Jobs + Adzuna)                                                             |
+| **Dados incompletos / desatualizados / inventados**       | Média-alta                                                      | Média (depende do uso)                            | verificar contra página LinkedIn real                                                           |
+| **Violação de LGPD / GDPR**                               | Média (se dados de candidatos UE forem coletados e armazenados) | Alta (multas, base legal fraca)                   | exige base legal (consentimento?) e DPIA — não é "free"                                         |
+| **Violação de "competitive service"** (Crawling Terms §1) | Média                                                           | Alta                                              | se o tracker virar "aplicativo de busca de emprego", arrisca §3.1.17 da API ToS (mesmo sem API) |
 
 **Qualidade dos dados.** O `curious_coder/linkedin-jobs-scraper` documenta: "Linkedin limits number of jobs per search to 1000" e que filtros "clássicos" (Experience level, Job type) foram removidos em agosto 2026. Isso significa que a **completude da cobertura de vagas é menor do que o LinkedIn Jobs exibe ao usuário humano**; o Actor adiciona o workaround de "split by location" mas isso é multiplicação de queries, não aumento de cobertura por vaga. Para Posts, o limite de 400-500 por query do `harvestapi/linkedin-post-search` é teto estrutural.
 
@@ -323,7 +325,7 @@ Reportado em `linkedinsider.blog/linkedin-scraping-tools-safety` (2026-05-29, se
 
 **Não. A conclusão de §6 do documento principal permanece válida, e é reforçada:**
 
-1. **"Fácil de fazer" ≠ "permitido".** O Apify reduz a barreira técnica de zero a algumas horas de integração, mas o ato de raspar `/voyager/api/jobs` e `/feed/update/` continua sendo (a) violação do robots.txt do LinkedIn (`Disallow: /voyager/api`, `Disallow: /jsearch*`, `Disallow: /feed/update/`), (b) violação do User Agreement §8.2 ("scraping … regardless of whether the data is publicly available"), e (c) armazenamento que colide com API ToS §3.1.8 e §4.3. O Apify muda o *engineering cost*, não o *legal status*.
+1. **"Fácil de fazer" ≠ "permitido".** O Apify reduz a barreira técnica de zero a algumas horas de integração, mas o ato de raspar `/voyager/api/jobs` e `/feed/update/` continua sendo (a) violação do robots.txt do LinkedIn (`Disallow: /voyager/api`, `Disallow: /jsearch*`, `Disallow: /feed/update/`), (b) violação do User Agreement §8.2 ("scraping … regardless of whether the data is publicly available"), e (c) armazenamento que colide com API ToS §3.1.8 e §4.3. O Apify muda o _engineering cost_, não o _legal status_.
 2. **A Apify não blinda juridicamente.** General Terms §11.1, Actor Terms §7.1 e Standard Actor Contract §2.1/§8.1 transferem o risco para o Usuário. Se a LinkedIn vier com cease & desist + lawsuit, o Usuário responde — e a Apify nada deve a ele (Standard Actor Contract §10.6: "Apify is not a party to this Contract and bears no liability arising from it.").
 3. **A Apify reconhece o risco publicamente.** O blog post oficial "Web scraping case law: HiQ v. LinkedIn" (2024-08-13) é a melhor evidência de que a Apify **sabe** que o cenário é cinza. Cita o resultado "gates are essentially up, legally speaking" (criminal) e alerta: "make sure you're not stepping on any contractual landmines" (civil). É um convite a fazer sua própria diligência — não uma garantia de segurança.
 4. **O precedente Proxycurl (2025) é o cenário adverso real.** Se o Usuário for um indivíduo com baixo volume, o risco de lawsuit é baixo (mas não-zero). Se o Usuário escalar e oferecer um "tracker de vagas" como produto, o perfil se parece com o da Nubela: cease & desist → lawsuit → injunction → shutdown. O caminho Proxycurl é a fronteira de fato entre "uso pessoal tolerado" e "uso comercial acionável".
@@ -350,11 +352,10 @@ Reportado em `linkedinsider.blog/linkedin-scraping-tools-safety` (2026-05-29, se
 15. https://docs.apify.com/academy/anti-scraping/ — Academy: técnicas de anti-scraping (proxy, fingerprinting, browser challenges).
 16. https://docs.apify.com/sdk/js/docs/concepts/session-management.md — Apify SDK session management.
 17. https://docs.apify.com/sdk/js/docs/concepts/proxy-management.md — Apify SDK proxy management.
-18. https://law.justia.com/cases/federal/appellate-courts/ca9/17-16783/17-16783-2022-04-18.html — *hiQ Labs, Inc. v. LinkedIn Corp.*, 31 F.4th 1180 (9th Cir. 2022).
-19. https://law.justia.com/cases/federal/appellate-courts/ca9/17-16783/17-16783-2019-09-09.html — *hiQ Labs, Inc. v. LinkedIn Corp.*, 938 F.3d 985 (9th Cir. 2019) (primeira decisão da 9ª Circunscrição).
+18. https://law.justia.com/cases/federal/appellate-courts/ca9/17-16783/17-16783-2022-04-18.html — _hiQ Labs, Inc. v. LinkedIn Corp._, 31 F.4th 1180 (9th Cir. 2022).
+19. https://law.justia.com/cases/federal/appellate-courts/ca9/17-16783/17-16783-2019-09-09.html — _hiQ Labs, Inc. v. LinkedIn Corp._, 938 F.3d 985 (9th Cir. 2019) (primeira decisão da 9ª Circunscrição).
 20. https://static.reuters.com/resources/media/editorial/20170620/hiqvlinkedin--ceaseanddesist.pdf — Cessar-e-desistir original da LinkedIn à hiQ, 23 de maio de 2017 (citando Quicksand, Sentinel, Org Block; e as bases legais CFAA + DMCA + Cal. Penal Code §502(c) + trespass).
 21. https://www.fenwick.com/insights/publications/hiq-labs-scrapes-by-again-the-ninth-circuit-reaffirms-that-data-scraping-does-not-violate-the-cfaa-1 — análise jurídica da decisão 2022 da 9ª Circunscrição (Fenwick & West).
 22. https://www.goodwinlaw.com/en/insights/publications/2022/04/04_20-ninth-circuit-limits — análise Goodwin Procter 2022 (CFAA "breaking and entering").
 
 > **Observação sobre a fonte do caso Proxycurl (2025):** o conteúdo de `linkedinsider.blog/linkedin-scraping-tools-safety` (acessado 2026-09-02) reporta a settlement, a $500k e a trajetória de enforcement, mas **não foi localizada uma fonte primária** (decisão judicial pública, release oficial da LinkedIn, comunicado da Nubela) que confirme integralmente os números durante a janela desta pesquisa. O leitor deve tratar os valores monetários e datas exatas como **não verificados por fonte primária**; a existência do caso (lawsuit + shutdown) é consistente com o padrão histórico, mas a quantificação permanece secundária.
-

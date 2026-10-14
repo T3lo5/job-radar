@@ -12,7 +12,8 @@ import { fetchWeWorkRemotely } from './weworkremotely.js';
 class RemoteOkSource implements JobSource {
   id = 'remoteok';
   name = 'RemoteOK';
-  description = 'Vagas remotas em tecnologia diretamente do JSON público do RemoteOK. Baixa manutenção e boa cobertura para devs.';
+  description =
+    'Vagas remotas em tecnologia diretamente do JSON público do RemoteOK. Baixa manutenção e boa cobertura para devs.';
 
   async fetch(query: SourceQuery): Promise<NormalizedJob[]> {
     return fetchRemoteOk(query);
@@ -22,7 +23,8 @@ class RemoteOkSource implements JobSource {
 class RemotiveSource implements JobSource {
   id = 'remotive';
   name = 'Remotive';
-  description = 'Vagas remotas curadas pela Remotive, com foco em tecnologia e alta qualidade de listagens.';
+  description =
+    'Vagas remotas curadas pela Remotive, com foco em tecnologia e alta qualidade de listagens.';
 
   async fetch(query: SourceQuery): Promise<NormalizedJob[]> {
     return fetchRemotive(query);
@@ -32,7 +34,8 @@ class RemotiveSource implements JobSource {
 class LinkedInSource implements JobSource {
   id = 'linkedin';
   name = 'LinkedIn';
-  description = 'Busca em páginas públicas do LinkedIn Jobs via scraping guest. Cobertura limitada a ~100 vagas por query e sujeita a bloqueios.';
+  description =
+    'Busca em páginas públicas do LinkedIn Jobs via scraping guest. Cobertura limitada a ~100 vagas por query e sujeita a bloqueios.';
 
   async fetch(query: SourceQuery): Promise<NormalizedJob[]> {
     return fetchLinkedIn(query);
@@ -42,7 +45,8 @@ class LinkedInSource implements JobSource {
 class GoogleJobsSource implements JobSource {
   id = 'google-jobs';
   name = 'Google Jobs';
-  description = 'Vagas agregadas pelo Google Jobs. Boa cobertura geral, mas menos filtros avançados que boards especializados.';
+  description =
+    'Vagas agregadas pelo Google Jobs. Boa cobertura geral, mas menos filtros avançados que boards especializados.';
 
   async fetch(query: SourceQuery): Promise<NormalizedJob[]> {
     return fetchGoogleJobs(query);
@@ -52,7 +56,8 @@ class GoogleJobsSource implements JobSource {
 class IndeedSource implements JobSource {
   id = 'indeed';
   name = 'Indeed';
-  description = 'Agregador de vagas com foco em mercado geral e Brasil. Volume alto, mas scraping mais sujeito a mudanças.';
+  description =
+    'Agregador de vagas com foco em mercado geral e Brasil. Volume alto, mas scraping mais sujeito a mudanças.';
 
   async fetch(query: SourceQuery): Promise<NormalizedJob[]> {
     return fetchIndeed(query);
@@ -62,7 +67,8 @@ class IndeedSource implements JobSource {
 class AdzunaSource implements JobSource {
   id = 'adzuna';
   name = 'Adzuna';
-  description = 'API oficial do Adzuna com free tier de 1k chamadas/mês. Agrega vagas em 16+ países, incluindo Brasil, com dados estruturados.';
+  description =
+    'API oficial do Adzuna com free tier de 1k chamadas/mês. Agrega vagas em 16+ países, incluindo Brasil, com dados estruturados.';
 
   async fetch(query: SourceQuery): Promise<NormalizedJob[]> {
     return fetchAdzuna(query);
@@ -72,7 +78,8 @@ class AdzunaSource implements JobSource {
 class JobicySource implements JobSource {
   id = 'jobicy';
   name = 'Jobicy';
-  description = 'Vagas remotas em tecnologia direto da API pública do Jobicy. Sem autenticação, com filtros por país, categoria e keyword.';
+  description =
+    'Vagas remotas em tecnologia direto da API pública do Jobicy. Sem autenticação, com filtros por país, categoria e keyword.';
 
   async fetch(query: SourceQuery): Promise<NormalizedJob[]> {
     return fetchJobicy(query);
@@ -82,7 +89,8 @@ class JobicySource implements JobSource {
 class WeWorkRemotelySource implements JobSource {
   id = 'weworkremotely';
   name = 'We Work Remotely';
-  description = 'Board remoto curado, com foco em tecnologia e empresas remotas-first. Dados vindos do RSS público.';
+  description =
+    'Board remoto curado, com foco em tecnologia e empresas remotas-first. Dados vindos do RSS público.';
 
   async fetch(query: SourceQuery): Promise<NormalizedJob[]> {
     return fetchWeWorkRemotely(query);
@@ -90,22 +98,24 @@ class WeWorkRemotelySource implements JobSource {
 }
 
 class ManualSource implements JobSource {
-  id = 'manual'
-  name = 'Manual'
-  description = 'Vagas adicionadas manualmente pelo usuário a partir de LinkedIn, indicações ou outras fontes.'
+  id = 'manual';
+  name = 'Manual';
+  description =
+    'Vagas adicionadas manualmente pelo usuário a partir de LinkedIn, indicações ou outras fontes.';
 
   async fetch(_query: SourceQuery): Promise<NormalizedJob[]> {
-    return []
+    return [];
   }
 }
 
 class RedditSource implements JobSource {
-  id = 'linkedin-apify'
-  name = 'LinkedIn (Apify API)'
-  description = 'Busca no LinkedIn via Apify Actor. Retorna mais resultados que o scraping guest direto, mas depende de token e custo por resultado.'
+  id = 'linkedin-apify';
+  name = 'LinkedIn (Apify API)';
+  description =
+    'Busca no LinkedIn via Apify Actor. Retorna mais resultados que o scraping guest direto, mas depende de token e custo por resultado.';
 
   async fetch(query: SourceQuery): Promise<NormalizedJob[]> {
-    return fetchLinkedInJobs(query)
+    return fetchLinkedInJobs(query);
   }
 }
 

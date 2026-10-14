@@ -1,36 +1,36 @@
-import type { NormalizedJob, SourceQuery } from '@job-radar/shared'
-import { normalizeJobFields, parseDate, stripHtml } from './normalizer.js'
+import type { NormalizedJob, SourceQuery } from '@job-radar/shared';
+import { normalizeJobFields, parseDate, stripHtml } from './normalizer.js';
 
-const INDEED_SEARCH = 'https://www.indeed.com/jobs'
-const INDEED_BRAZIL_SEARCH = 'https://br.indeed.com/vagas'
+const INDEED_SEARCH = 'https://www.indeed.com/jobs';
+const INDEED_BRAZIL_SEARCH = 'https://br.indeed.com/vagas';
 
 interface IndeedJob {
-  title: string
-  company: string
-  location: string
-  description: string
-  url: string
-  datePosted: string
-  salary?: string
-  jobKey: string
+  title: string;
+  company: string;
+  location: string;
+  description: string;
+  url: string;
+  datePosted: string;
+  salary?: string;
+  jobKey: string;
 }
 
 export async function fetchIndeed(query: SourceQuery): Promise<NormalizedJob[]> {
-  const keywords = query.keywords.length > 0 ? query.keywords.join(' ') : 'developer'
-  const location = query.remoteOnly ? '' : 'Brazil'
-  const isBrazil = !query.remoteOnly
+  const keywords = query.keywords.length > 0 ? query.keywords.join(' ') : 'developer';
+  const location = query.remoteOnly ? '' : 'Brazil';
+  const isBrazil = !query.remoteOnly;
 
-  const baseUrl = isBrazil ? INDEED_BRAZIL_SEARCH : INDEED_SEARCH
-  const url = new URL(baseUrl)
-  url.searchParams.set('q', keywords)
+  const baseUrl = isBrazil ? INDEED_BRAZIL_SEARCH : INDEED_SEARCH;
+  const url = new URL(baseUrl);
+  url.searchParams.set('q', keywords);
   if (location) {
-    url.searchParams.set('l', location)
+    url.searchParams.set('l', location);
   }
   if (query.limit) {
-    url.searchParams.set('limit', String(query.limit))
+    url.searchParams.set('limit', String(query.limit));
   }
   if (query.remoteOnly) {
-    url.searchParams.set('remotejob', '032b3046-06a3-4876-8dfd-474eb5e7ed11')
+    url.searchParams.set('remotejob', '032b3046-06a3-4876-8dfd-474eb5e7ed11');
   }
 
   const response = await fetch(url.toString(), {
@@ -40,14 +40,14 @@ export async function fetchIndeed(query: SourceQuery): Promise<NormalizedJob[]> 
       Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
       'Accept-Language': isBrazil ? 'pt-BR,pt;q=0.9' : 'en-US,en;q=0.9',
     },
-  })
+  });
 
   if (!response.ok) {
-    throw new Error(`Indeed error: ${response.status} ${response.statusText}`)
+    throw new Error(`Indeed error: ${response.status} ${response.statusText}`);
   }
 
-  const html = await response.text()
-  const jobs = parseIndeedHtml(html)
+  const html = await response.text();
+  const jobs = parseIndeedHtml(html);
   return jobs.map((raw) =>
     normalizeJobFields({
       title: raw.title,
@@ -60,19 +60,19 @@ export async function fetchIndeed(query: SourceQuery): Promise<NormalizedJob[]> 
       publishedAt: parseDate(raw.datePosted),
       tags: [],
     }),
-  )
+  );
 }
 
 function parseIndeedHtml(html: string): IndeedJob[] {
-  const jobs: IndeedJob[] = []
+  const jobs: IndeedJob[] = [];
 
-  const scriptPattern = /window\._initialData\s*=\s*(\{[\s\S]*?\})\s*<\/script>/g
-  let match: RegExpExecArray | null
+  const scriptPattern = /window\._initialData\s*=\s*(\{[\s\S]*?\})\s*<\/script>/g;
+  let match: RegExpExecArray | null;
 
   while ((match = scriptPattern.exec(html)) !== null) {
     try {
-      const data = JSON.parse(match[1])
-      const jobList = data?.jobList || data?.searchResults?.results || []
+      const data = JSON.parse(match[1]);
+      const jobList = data?.jobList || data?.searchResults?.results || [];
 
       for (const job of jobList) {
         if (job.title && job.company) {
@@ -85,7 +85,7 @@ function parseIndeedHtml(html: string): IndeedJob[] {
             datePosted: job.datePosted || job.formattedRelativeTime || '',
             salary: job.salary || job.formattedSalary,
             jobKey: job.jobKey || job.key || '',
-          })
+          });
         }
       }
     } catch {
@@ -94,28 +94,34 @@ function parseIndeedHtml(html: string): IndeedJob[] {
   }
 
   if (jobs.length === 0) {
-    const cardJobs = parseIndeedCards(html)
-    jobs.push(...cardJobs)
+    const cardJobs = parseIndeedCards(html);
+    jobs.push(...cardJobs);
   }
 
-  return jobs
+  return jobs;
 }
 
 function parseIndeedCards(html: string): IndeedJob[] {
-  const jobs: IndeedJob[] = []
+  const jobs: IndeedJob[] = [];
 
-  const cardPattern = /<div[^>]*data-jk="([^"]+)"[^>]*>([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/g
-  let match: RegExpExecArray | null
+  const cardPattern = /<div[^>]*data-jk="([^"]+)"[^>]*>([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/g;
+  let match: RegExpExecArray | null;
 
   while ((match = cardPattern.exec(html)) !== null) {
-    const jobKey = match[1]
-    const cardHtml = match[2]
+    const jobKey = match[1];
+    const cardHtml = match[2];
 
-    const titleMatch = cardHtml.match(/<h2[^>]*class="[^"]*jobTitle[^"]*"[^>]*>([\s\S]*?)<\/h2>/i)
-    const companyMatch = cardHtml.match(/<span[^>]*class="[^"]*companyName[^"]*"[^>]*>([\s\S]*?)<\/span>/i)
-    const locationMatch = cardHtml.match(/<div[^>]*class="[^"]*companyLocation[^"]*"[^>]*>([\s\S]*?)<\/div>/i)
-    const salaryMatch = cardHtml.match(/<div[^>]*class="[^"]*salary-snippet-container[^"]*"[^>]*>([\s\S]*?)<\/div>/i)
-    const dateMatch = cardHtml.match(/<span[^>]*class="[^"]*date[^"]*"[^>]*>([\s\S]*?)<\/span>/i)
+    const titleMatch = cardHtml.match(/<h2[^>]*class="[^"]*jobTitle[^"]*"[^>]*>([\s\S]*?)<\/h2>/i);
+    const companyMatch = cardHtml.match(
+      /<span[^>]*class="[^"]*companyName[^"]*"[^>]*>([\s\S]*?)<\/span>/i,
+    );
+    const locationMatch = cardHtml.match(
+      /<div[^>]*class="[^"]*companyLocation[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+    );
+    const salaryMatch = cardHtml.match(
+      /<div[^>]*class="[^"]*salary-snippet-container[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+    );
+    const dateMatch = cardHtml.match(/<span[^>]*class="[^"]*date[^"]*"[^>]*>([\s\S]*?)<\/span>/i);
 
     if (titleMatch && companyMatch) {
       jobs.push({
@@ -127,9 +133,9 @@ function parseIndeedCards(html: string): IndeedJob[] {
         datePosted: dateMatch ? stripHtml(dateMatch[1]) : '',
         salary: salaryMatch ? stripHtml(salaryMatch[1]) : undefined,
         jobKey,
-      })
+      });
     }
   }
 
-  return jobs
+  return jobs;
 }

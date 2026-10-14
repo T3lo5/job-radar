@@ -1,31 +1,31 @@
-import type { AIClient, AIMessage } from './types.js'
+import type { AIClient, AIMessage } from './types.js';
 
 export interface CvData {
-  name: string
-  email?: string
-  phone?: string
-  title?: string
-  summary?: string
-  skills: string[]
+  name: string;
+  email?: string;
+  phone?: string;
+  title?: string;
+  summary?: string;
+  skills: string[];
   experience: Array<{
-    company: string
-    role: string
-    period?: string
-    description?: string
-  }>
+    company: string;
+    role: string;
+    period?: string;
+    description?: string;
+  }>;
   education: Array<{
-    institution: string
-    degree: string
-    field?: string
-  }>
-  languages: string[]
+    institution: string;
+    degree: string;
+    field?: string;
+  }>;
+  languages: string[];
 }
 
 export class CvParser {
-  private readonly ai: AIClient
+  private readonly ai: AIClient;
 
   constructor(ai: AIClient) {
-    this.ai = ai
+    this.ai = ai;
   }
 
   async parse(rawText: string): Promise<CvData> {
@@ -55,14 +55,14 @@ IMPORTANT RULES:
         role: 'user',
         content: `Extract structured data from this CV:\n\n${rawText.slice(0, 8000)}`,
       },
-    ]
+    ];
 
-    const response = await this.ai.chat(messages, { temperature: 0.1, maxTokens: 3000 })
+    const response = await this.ai.chat(messages, { temperature: 0.1, maxTokens: 3000 });
 
     try {
-      return JSON.parse(response.content) as CvData
+      return JSON.parse(response.content) as CvData;
     } catch {
-      throw new Error(`Failed to parse CV: ${response.content.slice(0, 200)}`)
+      throw new Error(`Failed to parse CV: ${response.content.slice(0, 200)}`);
     }
   }
 }

@@ -1,23 +1,23 @@
-import type { NormalizedJob, SourceQuery } from '@job-radar/shared'
-import { normalizeJobFields, parseDate, decodeHtmlEntities } from './normalizer.js'
+import type { NormalizedJob, SourceQuery } from '@job-radar/shared';
+import { normalizeJobFields, parseDate, decodeHtmlEntities } from './normalizer.js';
 
-const GOOGLE_JOBS_SEARCH = 'https://www.google.com/search'
+const GOOGLE_JOBS_SEARCH = 'https://www.google.com/search';
 
 interface GoogleJobData {
-  title: string
-  company: string
-  location: string
-  description: string
-  url: string
-  datePosted: string
-  salary?: string
+  title: string;
+  company: string;
+  location: string;
+  description: string;
+  url: string;
+  datePosted: string;
+  salary?: string;
 }
 
 export async function fetchGoogleJobs(query: SourceQuery): Promise<NormalizedJob[]> {
-  const keywords = query.keywords.length > 0 ? query.keywords.join(' ') : 'developer'
-  const location = query.remoteOnly ? '' : 'Brazil'
+  const keywords = query.keywords.length > 0 ? query.keywords.join(' ') : 'developer';
+  const location = query.remoteOnly ? '' : 'Brazil';
 
-  const url = `${GOOGLE_JOBS_SEARCH}?q=${encodeURIComponent(keywords)}&ibp=htl;jobs&hl=pt-BR&gl=br&location=${encodeURIComponent(location)}`
+  const url = `${GOOGLE_JOBS_SEARCH}?q=${encodeURIComponent(keywords)}&ibp=htl;jobs&hl=pt-BR&gl=br&location=${encodeURIComponent(location)}`;
 
   const response = await fetch(url, {
     headers: {
@@ -26,14 +26,14 @@ export async function fetchGoogleJobs(query: SourceQuery): Promise<NormalizedJob
       Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
       'Accept-Language': 'pt-BR,pt;q=0.9',
     },
-  })
+  });
 
   if (!response.ok) {
-    throw new Error(`Google Jobs error: ${response.status} ${response.statusText}`)
+    throw new Error(`Google Jobs error: ${response.status} ${response.statusText}`);
   }
 
-  const html = await response.text()
-  const jobs = parseGoogleJobsHtml(html)
+  const html = await response.text();
+  const jobs = parseGoogleJobsHtml(html);
   return jobs.map((raw) =>
     normalizeJobFields({
       title: raw.title,
@@ -45,17 +45,17 @@ export async function fetchGoogleJobs(query: SourceQuery): Promise<NormalizedJob
       publishedAt: parseDate(raw.datePosted),
       tags: [],
     }),
-  )
+  );
 }
 
 function parseGoogleJobsHtml(html: string): GoogleJobData[] {
-  const jobs: GoogleJobData[] = []
+  const jobs: GoogleJobData[] = [];
 
-  const jobPattern = /\[1,\[1,"([^"]+)","([^"]+)","([^"]*)","([^"]*)",null,null,null,"([^"]*)"\]/g
-  let match: RegExpExecArray | null
+  const jobPattern = /\[1,\[1,"([^"]+)","([^"]+)","([^"]*)","([^"]*)",null,null,null,"([^"]*)"\]/g;
+  let match: RegExpExecArray | null;
 
   while ((match = jobPattern.exec(html)) !== null) {
-    const [, title, company, location, description, , url] = match
+    const [, title, company, location, description, , url] = match;
     if (title && company) {
       jobs.push({
         title: decodeHtmlEntities(title),
@@ -64,26 +64,26 @@ function parseGoogleJobsHtml(html: string): GoogleJobData[] {
         description: decodeHtmlEntities(description || ''),
         url: url || '',
         datePosted: '',
-      })
+      });
     }
   }
 
   if (jobs.length === 0) {
-    const structuredData = extractStructuredData(html)
-    jobs.push(...structuredData)
+    const structuredData = extractStructuredData(html);
+    jobs.push(...structuredData);
   }
 
-  return jobs
+  return jobs;
 }
 
 function extractStructuredData(html: string): GoogleJobData[] {
-  const jobs: GoogleJobData[] = []
-  const ldJsonPattern = /<script type="application\/ld\+json">([\s\S]*?)<\/script>/g
-  let match: RegExpExecArray | null
+  const jobs: GoogleJobData[] = [];
+  const ldJsonPattern = /<script type="application\/ld\+json">([\s\S]*?)<\/script>/g;
+  let match: RegExpExecArray | null;
 
   while ((match = ldJsonPattern.exec(html)) !== null) {
     try {
-      const data = JSON.parse(match[1])
+      const data = JSON.parse(match[1]);
       if (data['@type'] === 'JobPosting') {
         jobs.push({
           title: data.title || '',
@@ -95,12 +95,12 @@ function extractStructuredData(html: string): GoogleJobData[] {
           salary: data.baseSalary?.value
             ? `${data.baseSalary.value.minValue || data.baseSalary.value.value} - ${data.baseSalary.value.maxValue || data.baseSalary.value.value}`
             : undefined,
-        })
+        });
       }
     } catch {
       // Skip invalid JSON
     }
   }
 
-  return jobs
+  return jobs;
 }

@@ -17,12 +17,14 @@ Route handlers now act as thin transport layers: validate input, delegate to ser
 ## Consequences
 
 **Positive:**
+
 - Services are independently testable without Fastify context
 - Business logic is reusable (e.g., `jobService.listMatches()` could be called from CLI, telegram bot, etc.)
 - Route handlers reduced to 50-70 lines each, focused on HTTP concerns only
 - Consistent error handling patterns across routes
 
 **Negative:**
+
 - Added indirection — caller must trace through service layer
 - Some duplication of validation between route schemas and service (services still do their own existence checks)
 

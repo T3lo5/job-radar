@@ -1,21 +1,21 @@
-import type { AIClient, AIMessage } from './types.js'
+import type { AIClient, AIMessage } from './types.js';
 
 export interface CvOptimization {
-  optimizedText: string
+  optimizedText: string;
   changes: Array<{
-    type: 'reorder' | 'rewrite' | 'keyword_add' | 'summary'
-    section: string
-    description: string
-  }>
-  keywordsAdded: string[]
-  summary: string
+    type: 'reorder' | 'rewrite' | 'keyword_add' | 'summary';
+    section: string;
+    description: string;
+  }>;
+  keywordsAdded: string[];
+  summary: string;
 }
 
 export class CvOptimizer {
-  private readonly ai: AIClient
+  private readonly ai: AIClient;
 
   constructor(ai: AIClient) {
-    this.ai = ai
+    this.ai = ai;
   }
 
   async optimize(
@@ -60,14 +60,14 @@ Missing Skills: ${missingSkills.join(', ')}
 Original CV:
 ${cvText.slice(0, 6000)}`,
       },
-    ]
+    ];
 
-    const response = await this.ai.chat(messages, { temperature: 0.3, maxTokens: 4000 })
+    const response = await this.ai.chat(messages, { temperature: 0.3, maxTokens: 4000 });
 
     try {
-      return JSON.parse(response.content) as CvOptimization
+      return JSON.parse(response.content) as CvOptimization;
     } catch {
-      throw new Error(`Failed to parse CV optimization: ${response.content.slice(0, 200)}`)
+      throw new Error(`Failed to parse CV optimization: ${response.content.slice(0, 200)}`);
     }
   }
 
@@ -120,14 +120,14 @@ ${cvText.slice(0, 6000)}
 JOB DESCRIPTION:
 ${jobTitle ? `Job Title: ${jobTitle}\n\n` : ''}${jobDescription.slice(0, 4000)}`,
       },
-    ]
+    ];
 
-    const response = await this.ai.chat(messages, { temperature: 0.2, maxTokens: 4000 })
+    const response = await this.ai.chat(messages, { temperature: 0.2, maxTokens: 4000 });
 
     try {
-      return JSON.parse(response.content) as CvOptimization
+      return JSON.parse(response.content) as CvOptimization;
     } catch {
-      throw new Error(`Failed to parse CV optimization: ${response.content.slice(0, 200)}`)
+      throw new Error(`Failed to parse CV optimization: ${response.content.slice(0, 200)}`);
     }
   }
 }

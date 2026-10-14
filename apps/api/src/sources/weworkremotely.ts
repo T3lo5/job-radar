@@ -1,15 +1,15 @@
-import type { NormalizedJob, SourceQuery } from '@job-radar/shared'
-import { normalizeJobFields } from './normalizer.js'
+import type { NormalizedJob, SourceQuery } from '@job-radar/shared';
+import { normalizeJobFields } from './normalizer.js';
 
-const WWR_RSS = 'https://weworkremotely.com/remote-jobs.rss'
+const WWR_RSS = 'https://weworkremotely.com/remote-jobs.rss';
 
 interface WwrJob {
-  title: string
-  company: string
-  location: string
-  url: string
-  publishedAt: string
-  description: string
+  title: string;
+  company: string;
+  location: string;
+  url: string;
+  publishedAt: string;
+  description: string;
 }
 
 function stripHtml(html: string): string {
@@ -21,23 +21,23 @@ function stripHtml(html: string): string {
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .replace(/&nbsp;/g, ' ')
-    .trim()
+    .trim();
 }
 
 function parseWwrRss(xml: string): WwrJob[] {
-  const jobs: WwrJob[] = []
-  const itemRegex = /<item>([\s\S]*?)<\/item>/g
-  let itemMatch: RegExpExecArray | null
+  const jobs: WwrJob[] = [];
+  const itemRegex = /<item>([\s\S]*?)<\/item>/g;
+  let itemMatch: RegExpExecArray | null;
 
   while ((itemMatch = itemRegex.exec(xml)) !== null) {
-    const item = itemMatch[1]
+    const item = itemMatch[1];
 
-    const titleMatch = item.match(/<title>([\s\S]*?)<\/title>/)
-    const companyMatch = item.match(/<company[^>]*>([\s\S]*?)<\/company>/)
-    const locationMatch = item.match(/<location[^>]*>([\s\S]*?)<\/location>/)
-    const linkMatch = item.match(/<link>([\s\S]*?)<\/link>/)
-    const pubDateMatch = item.match(/<pubDate>([\s\S]*?)<\/pubDate>/)
-    const descriptionMatch = item.match(/<description>([\s\S]*?)<\/description>/)
+    const titleMatch = item.match(/<title>([\s\S]*?)<\/title>/);
+    const companyMatch = item.match(/<company[^>]*>([\s\S]*?)<\/company>/);
+    const locationMatch = item.match(/<location[^>]*>([\s\S]*?)<\/location>/);
+    const linkMatch = item.match(/<link>([\s\S]*?)<\/link>/);
+    const pubDateMatch = item.match(/<pubDate>([\s\S]*?)<\/pubDate>/);
+    const descriptionMatch = item.match(/<description>([\s\S]*?)<\/description>/);
 
     if (titleMatch && linkMatch) {
       jobs.push({
@@ -47,11 +47,11 @@ function parseWwrRss(xml: string): WwrJob[] {
         url: stripHtml(linkMatch[1]),
         publishedAt: pubDateMatch ? stripHtml(pubDateMatch[1]) : '',
         description: descriptionMatch ? stripHtml(descriptionMatch[1]) : '',
-      })
+      });
     }
   }
 
-  return jobs
+  return jobs;
 }
 
 export async function fetchWeWorkRemotely(query: SourceQuery): Promise<NormalizedJob[]> {
@@ -59,24 +59,24 @@ export async function fetchWeWorkRemotely(query: SourceQuery): Promise<Normalize
     headers: {
       Accept: 'application/rss+xml, application/xml, text/xml',
     },
-  })
+  });
 
   if (!response.ok) {
-    console.warn(`WeWorkRemotely RSS error: ${response.status} ${response.statusText}`)
-    return []
+    console.warn(`WeWorkRemotely RSS error: ${response.status} ${response.statusText}`);
+    return [];
   }
 
-  const xml = await response.text()
-  const rawJobs = parseWwrRss(xml)
+  const xml = await response.text();
+  const rawJobs = parseWwrRss(xml);
 
   const filtered = rawJobs.filter((job) => {
-    if (query.keywords.length === 0) return true
-    const text = `${job.title} ${job.company} ${job.description}`.toLowerCase()
-    return query.keywords.some((keyword) => text.includes(keyword.toLowerCase()))
-  })
+    if (query.keywords.length === 0) return true;
+    const text = `${job.title} ${job.company} ${job.description}`.toLowerCase();
+    return query.keywords.some((keyword) => text.includes(keyword.toLowerCase()));
+  });
 
-  const limit = query.limit ?? 50
-  const jobs: NormalizedJob[] = []
+  const limit = query.limit ?? 50;
+  const jobs: NormalizedJob[] = [];
 
   for (const raw of filtered.slice(0, limit)) {
     jobs.push(
@@ -90,8 +90,8 @@ export async function fetchWeWorkRemotely(query: SourceQuery): Promise<Normalize
         publishedAt: raw.publishedAt ? new Date(raw.publishedAt) : null,
         tags: ['remote', 'weworkremotely'],
       }),
-    )
+    );
   }
 
-  return jobs
+  return jobs;
 }

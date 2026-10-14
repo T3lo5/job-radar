@@ -57,7 +57,8 @@ export interface JobSource {
 class LinkedInSource implements JobSource {
   id = 'linkedin';
   name = 'LinkedIn';
-  description = 'Busca em páginas públicas do LinkedIn Jobs via scraping guest. Cobertura limitada a ~100 vagas por query e sujeita a bloqueios.';
+  description =
+    'Busca em páginas públicas do LinkedIn Jobs via scraping guest. Cobertura limitada a ~100 vagas por query e sujeita a bloqueios.';
 
   async fetch(query: SourceQuery): Promise<NormalizedJob[]> {
     return fetchLinkedIn(query);

@@ -1,9 +1,9 @@
-import * as SelectPrimitive from '@radix-ui/react-select'
-import { forwardRef, type ComponentRef } from 'react'
-import { cn } from '../../lib/utils/cn'
-import { ChevronDown } from 'lucide-react'
+import * as SelectPrimitive from '@radix-ui/react-select';
+import { forwardRef, type ComponentRef } from 'react';
+import { cn } from '../../lib/utils/cn';
+import { ChevronDown } from 'lucide-react';
 
-const Select = SelectPrimitive.Root
+const Select = SelectPrimitive.Root;
 
 const SelectTrigger = forwardRef<
   ComponentRef<typeof SelectPrimitive.Trigger>,
@@ -21,16 +21,16 @@ const SelectTrigger = forwardRef<
       <ChevronDown className="h-4 w-4 opacity-50 shrink-0" />
     </button>
   </SelectPrimitive.Trigger>
-))
-SelectTrigger.displayName = 'SelectTrigger'
+));
+SelectTrigger.displayName = 'SelectTrigger';
 
 const SelectValue = forwardRef<
   ComponentRef<typeof SelectPrimitive.Value>,
   SelectPrimitive.SelectValueProps
 >(({ className, placeholder, ...props }, ref) => (
   <SelectPrimitive.Value ref={ref} placeholder={placeholder} className={className} {...props} />
-))
-SelectValue.displayName = 'SelectValue'
+));
+SelectValue.displayName = 'SelectValue';
 
 const SelectContent = forwardRef<
   ComponentRef<typeof SelectPrimitive.Content>,
@@ -46,13 +46,11 @@ const SelectContent = forwardRef<
       )}
       {...props}
     >
-      <SelectPrimitive.Viewport>
-        {children}
-      </SelectPrimitive.Viewport>
+      <SelectPrimitive.Viewport>{children}</SelectPrimitive.Viewport>
     </SelectPrimitive.Content>
   </SelectPrimitive.Portal>
-))
-SelectContent.displayName = 'SelectContent'
+));
+SelectContent.displayName = 'SelectContent';
 
 const SelectItem = forwardRef<
   ComponentRef<typeof SelectPrimitive.Item>,
@@ -71,11 +69,11 @@ const SelectItem = forwardRef<
   >
     <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
   </SelectPrimitive.Item>
-))
-SelectItem.displayName = 'SelectItem'
+));
+SelectItem.displayName = 'SelectItem';
 
-const SelectItemText = SelectPrimitive.ItemText
-const SelectItemIndicator = SelectPrimitive.ItemIndicator
+const SelectItemText = SelectPrimitive.ItemText;
+const SelectItemIndicator = SelectPrimitive.ItemIndicator;
 
 export {
   Select,
@@ -85,4 +83,4 @@ export {
   SelectItem,
   SelectItemText,
   SelectItemIndicator,
-}
+};

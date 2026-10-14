@@ -1,17 +1,17 @@
-import type { AIClient, AIClientConfig, AIMessage, AIResponse } from './types.js'
+import type { AIClient, AIClientConfig, AIMessage, AIResponse } from './types.js';
 
 export class HttpAiClient implements AIClient {
-  private readonly config: AIClientConfig
+  private readonly config: AIClientConfig;
 
   constructor(config: AIClientConfig) {
-    this.config = config
+    this.config = config;
   }
 
   async chat(
     messages: AIMessage[],
     options?: { temperature?: number; maxTokens?: number },
   ): Promise<AIResponse> {
-    const startTime = Date.now()
+    const startTime = Date.now();
 
     const response = await fetch(this.config.baseUrl, {
       method: 'POST',
@@ -25,19 +25,19 @@ export class HttpAiClient implements AIClient {
         temperature: options?.temperature ?? 0.3,
         max_tokens: options?.maxTokens ?? 2000,
       }),
-    })
+    });
 
     if (!response.ok) {
-      const error = await response.text()
-      throw new Error(`AI API error (${response.status}): ${error}`)
+      const error = await response.text();
+      throw new Error(`AI API error (${response.status}): ${error}`);
     }
 
     const data = (await response.json()) as {
-      choices: Array<{ message: { content: string } }>
-      usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number }
-    }
+      choices: Array<{ message: { content: string } }>;
+      usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+    };
 
-    const latencyMs = Date.now() - startTime
+    const latencyMs = Date.now() - startTime;
 
     return {
       content: data.choices[0]?.message?.content ?? '',
@@ -49,6 +49,6 @@ export class HttpAiClient implements AIClient {
           }
         : undefined,
       latencyMs,
-    }
+    };
   }
 }

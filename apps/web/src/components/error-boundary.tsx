@@ -1,41 +1,41 @@
-import { Component, type ErrorInfo, type ReactNode } from 'react'
-import { Button } from './ui/button'
-import { AlertCircle } from 'lucide-react'
+import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { Button } from './ui/button';
+import { AlertCircle } from 'lucide-react';
 
 interface ErrorBoundaryProps {
-  children: ReactNode
-  fallback?: ReactNode
-  onRetry?: () => void
+  children: ReactNode;
+  fallback?: ReactNode;
+  onRetry?: () => void;
 }
 
 interface ErrorBoundaryState {
-  hasError: boolean
-  error?: Error
+  hasError: boolean;
+  error?: Error;
 }
 
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
-    super(props)
-    this.state = { hasError: false }
+    super(props);
+    this.state = { hasError: false };
   }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
-    return { hasError: true, error }
+    return { hasError: true, error };
   }
 
   override componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error('ErrorBoundary caught:', error, info)
+    console.error('ErrorBoundary caught:', error, info);
   }
 
   handleRetry = () => {
-    this.setState({ hasError: false, error: undefined })
-    this.props.onRetry?.()
-  }
+    this.setState({ hasError: false, error: undefined });
+    this.props.onRetry?.();
+  };
 
   override render() {
     if (this.state.hasError) {
       if (this.props.fallback) {
-        return <>{this.props.fallback}</>
+        return <>{this.props.fallback}</>;
       }
       return (
         <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -50,8 +50,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             Tentar novamente
           </Button>
         </div>
-      )
+      );
     }
-    return this.props.children
+    return this.props.children;
   }
 }

@@ -1,10 +1,10 @@
-import type { AIClient, AIMessage } from './types.js'
+import type { AIClient, AIMessage } from './types.js';
 
 export class Summarizer {
-  private readonly ai: AIClient
+  private readonly ai: AIClient;
 
   constructor(ai: AIClient) {
-    this.ai = ai
+    this.ai = ai;
   }
 
   async summarize(description: string): Promise<string> {
@@ -18,9 +18,9 @@ export class Summarizer {
         role: 'user',
         content: description.slice(0, 3000),
       },
-    ]
+    ];
 
-    const response = await this.ai.chat(messages, { temperature: 0.3, maxTokens: 500 })
-    return response.content
+    const response = await this.ai.chat(messages, { temperature: 0.3, maxTokens: 500 });
+    return response.content;
   }
 }

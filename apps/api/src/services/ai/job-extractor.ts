@@ -1,23 +1,23 @@
-import type { AIClient, AIMessage } from './types.js'
+import type { AIClient, AIMessage } from './types.js';
 
 export interface JobExtraction {
-  title: string
-  seniority: string | null
-  skills: string[]
-  experienceYears: string | null
-  languages: string[]
-  location: string | null
-  remote: 'REMOTE' | 'HYBRID' | 'ON_SITE' | 'UNKNOWN'
-  salary: { min: number | null; max: number | null; currency: string | null }
-  requiredRequirements: string[]
-  niceToHave: string[]
+  title: string;
+  seniority: string | null;
+  skills: string[];
+  experienceYears: string | null;
+  languages: string[];
+  location: string | null;
+  remote: 'REMOTE' | 'HYBRID' | 'ON_SITE' | 'UNKNOWN';
+  salary: { min: number | null; max: number | null; currency: string | null };
+  requiredRequirements: string[];
+  niceToHave: string[];
 }
 
 export class JobExtractor {
-  private readonly ai: AIClient
+  private readonly ai: AIClient;
 
   constructor(ai: AIClient) {
-    this.ai = ai
+    this.ai = ai;
   }
 
   async extract(title: string, description: string): Promise<JobExtraction> {
@@ -50,14 +50,14 @@ IMPORTANT RULES:
 
 Description: ${description.slice(0, 6000)}`,
       },
-    ]
+    ];
 
-    const response = await this.ai.chat(messages, { temperature: 0.2, maxTokens: 2000 })
+    const response = await this.ai.chat(messages, { temperature: 0.2, maxTokens: 2000 });
 
     try {
-      return JSON.parse(response.content) as JobExtraction
+      return JSON.parse(response.content) as JobExtraction;
     } catch {
-      throw new Error(`Failed to parse job extraction: ${response.content.slice(0, 200)}`)
+      throw new Error(`Failed to parse job extraction: ${response.content.slice(0, 200)}`);
     }
   }
 }

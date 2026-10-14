@@ -1,5 +1,5 @@
-import { forwardRef, type HTMLAttributes } from 'react'
-import { cn } from '../../lib/utils/cn'
+import { forwardRef, type HTMLAttributes } from 'react';
+import { cn } from '../../lib/utils/cn';
 
 const Skeleton = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (
@@ -9,7 +9,7 @@ const Skeleton = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
       {...props}
     />
   ),
-)
-Skeleton.displayName = 'Skeleton'
+);
+Skeleton.displayName = 'Skeleton';
 
-export { Skeleton }
+export { Skeleton };

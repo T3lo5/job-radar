@@ -1,31 +1,31 @@
-import { prisma } from '../db/prisma.js'
+import { prisma } from '../db/prisma.js';
 
 export interface AiProviderInput {
-  name: string
-  baseUrl: string
-  apiKey: string
-  model: string
-  isActive?: boolean
+  name: string;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  isActive?: boolean;
 }
 
 export interface AiProviderOutput {
-  id: string
-  name: string
-  baseUrl: string
-  model: string
-  isActive: boolean
-  createdAt: Date
-  updatedAt: Date
+  id: string;
+  name: string;
+  baseUrl: string;
+  model: string;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 function toOutput(provider: {
-  id: string
-  name: string
-  baseUrl: string
-  model: string
-  isActive: boolean
-  createdAt: Date
-  updatedAt: Date
+  id: string;
+  name: string;
+  baseUrl: string;
+  model: string;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
 }): AiProviderOutput {
   return {
     id: provider.id,
@@ -35,21 +35,21 @@ function toOutput(provider: {
     isActive: provider.isActive,
     createdAt: provider.createdAt,
     updatedAt: provider.updatedAt,
-  }
+  };
 }
 
 export async function listAiProviders(): Promise<AiProviderOutput[]> {
   const providers = await prisma.aiProvider.findMany({
     orderBy: { createdAt: 'asc' },
-  })
-  return providers.map(toOutput)
+  });
+  return providers.map(toOutput);
 }
 
 export async function getActiveAiProvider(): Promise<AiProviderOutput | null> {
   const provider = await prisma.aiProvider.findFirst({
     where: { isActive: true },
-  })
-  return provider ? toOutput(provider) : null
+  });
+  return provider ? toOutput(provider) : null;
 }
 
 export async function createAiProvider(data: AiProviderInput): Promise<AiProviderOutput> {
@@ -57,7 +57,7 @@ export async function createAiProvider(data: AiProviderInput): Promise<AiProvide
     await prisma.aiProvider.updateMany({
       where: { isActive: true },
       data: { isActive: false },
-    })
+    });
   }
 
   const provider = await prisma.aiProvider.create({
@@ -68,9 +68,9 @@ export async function createAiProvider(data: AiProviderInput): Promise<AiProvide
       model: data.model,
       isActive: data.isActive ?? false,
     },
-  })
+  });
 
-  return toOutput(provider)
+  return toOutput(provider);
 }
 
 export async function updateAiProvider(
@@ -81,7 +81,7 @@ export async function updateAiProvider(
     await prisma.aiProvider.updateMany({
       where: { isActive: true, id: { not: id } },
       data: { isActive: false },
-    })
+    });
   }
 
   const provider = await prisma.aiProvider.update({
@@ -93,25 +93,25 @@ export async function updateAiProvider(
       ...(data.model !== undefined && { model: data.model }),
       ...(data.isActive !== undefined && { isActive: data.isActive }),
     },
-  })
+  });
 
-  return toOutput(provider)
+  return toOutput(provider);
 }
 
 export async function deleteAiProvider(id: string): Promise<void> {
-  await prisma.aiProvider.delete({ where: { id } })
+  await prisma.aiProvider.delete({ where: { id } });
 }
 
 export async function setActiveAiProvider(id: string): Promise<AiProviderOutput> {
   await prisma.aiProvider.updateMany({
     where: { isActive: true },
     data: { isActive: false },
-  })
+  });
 
   const provider = await prisma.aiProvider.update({
     where: { id },
     data: { isActive: true },
-  })
+  });
 
-  return toOutput(provider)
+  return toOutput(provider);
 }

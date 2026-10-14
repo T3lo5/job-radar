@@ -1,4 +1,4 @@
-import { z } from 'zod'
+import { z } from 'zod';
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
@@ -11,26 +11,24 @@ const envSchema = z.object({
   APP_HOST: z.string().default('0.0.0.0'),
 
   SETTINGS_ENCRYPTION_KEY: z.string().min(1),
-})
+});
 
-export type Env = z.infer<typeof envSchema>
+export type Env = z.infer<typeof envSchema>;
 
-let validatedEnv: Env | null = null
+let validatedEnv: Env | null = null;
 
 export function getEnv(): Env {
-  if (validatedEnv) return validatedEnv
+  if (validatedEnv) return validatedEnv;
 
-  const result = envSchema.safeParse(process.env)
+  const result = envSchema.safeParse(process.env);
 
   if (!result.success) {
     const errors = result.error.errors
       .map((e) => `  - ${e.path.join('.')}: ${e.message}`)
-      .join('\n')
-    throw new Error(
-      `Invalid environment variables:\n${errors}\n\nCheck your .env file.`,
-    )
+      .join('\n');
+    throw new Error(`Invalid environment variables:\n${errors}\n\nCheck your .env file.`);
   }
 
-  validatedEnv = result.data
-  return validatedEnv
+  validatedEnv = result.data;
+  return validatedEnv;
 }

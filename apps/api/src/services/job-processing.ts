@@ -1,5 +1,5 @@
-import { prisma } from '../db/prisma.js'
-import type { Prisma } from '../generated/prisma/index.js'
+import { prisma } from '../db/prisma.js';
+import type { Prisma } from '../generated/prisma/index.js';
 
 export async function logStatusTransition(
   jobId: string,
@@ -16,7 +16,7 @@ export async function logStatusTransition(
       message,
       metadata,
     },
-  })
+  });
 }
 
 export async function updateJobStatus(
@@ -28,9 +28,9 @@ export async function updateJobStatus(
   const job = await prisma.job.findUnique({
     where: { id: jobId },
     select: { status: true },
-  })
+  });
 
-  if (!job) throw new Error(`Job ${jobId} not found`)
+  if (!job) throw new Error(`Job ${jobId} not found`);
 
   await prisma.$transaction([
     prisma.job.update({
@@ -46,18 +46,18 @@ export async function updateJobStatus(
         metadata,
       },
     }),
-  ])
+  ]);
 }
 
-export async function getJobProcessingHistory(
-  jobId: string,
-): Promise<Array<{
-  id: string
-  fromStatus: string | null
-  toStatus: string
-  message: string | null
-  createdAt: Date
-}>> {
+export async function getJobProcessingHistory(jobId: string): Promise<
+  Array<{
+    id: string;
+    fromStatus: string | null;
+    toStatus: string;
+    message: string | null;
+    createdAt: Date;
+  }>
+> {
   return prisma.jobProcessingLog.findMany({
     where: { jobId },
     orderBy: { createdAt: 'asc' },
@@ -68,5 +68,5 @@ export async function getJobProcessingHistory(
       message: true,
       createdAt: true,
     },
-  })
+  });
 }
