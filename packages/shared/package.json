@@ -2,7 +2,7 @@
   "name": "@job-radar/shared",
   "version": "0.0.0",
   "private": true,
-  "description": "Tipos e utilitários de domínio compartilhados entre API e Web",
+  "description": "Tipos e utilit\u00e1rios de dom\u00ednio compartilhados entre API e Web",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -17,14 +17,16 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write \"src/**/*.{ts,json,md}\"",
-    "test": "echo 'test placeholder'"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "@job-radar/eslint-config": "workspace:*",
     "@job-radar/typescript-config": "workspace:*",
     "eslint": "^9.17.0",
     "prettier": "^3.9.0",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitest": "2.1.9"
   },
   "license": "UNLICENSED"
 }
