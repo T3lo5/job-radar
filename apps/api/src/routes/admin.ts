@@ -15,6 +15,48 @@ import {
   sourceEnabledKey,
 } from '../services/settings-keys.js';
 import { getAllSources } from '../sources/index.js';
+import { estimateCostUsd } from '../services/ai/pricing.js';
+import type { AiRunType } from '../generated/prisma/index.js';
+
+/**
+ * Espelha o enum AiRunType do Prisma.
+ *
+ * Existe para validar o query param do filtro. Com `as any`, um valor errado
+ * chegava ao Prisma e virava 500 — o usuário só via "algo deu errado".
+ */
+const AI_RUN_TYPES = [
+  'CV_PARSE',
+  'REQUIREMENT_EXTRACT',
+  'MATCH_EXPLAIN',
+  'JOB_ANALYZE',
+  'CV_OPTIMIZE',
+  'SUMMARIZE',
+  'OTHER',
+] as const satisfies readonly AiRunType[];
+
+const aiRunTypeSchema = z.enum(AI_RUN_TYPES);
+
+/** Rótulo em português para a tela de auditoria. */
+export const AI_RUN_LABELS: Record<AiRunType, string> = {
+  CV_PARSE: 'Leitura de CV',
+  REQUIREMENT_EXTRACT: 'Extração de requisitos',
+  MATCH_EXPLAIN: 'Explicação de match',
+  JOB_ANALYZE: 'Análise de vaga',
+  CV_OPTIMIZE: 'Otimização de CV',
+  SUMMARIZE: 'Resumo',
+  OTHER: 'Outra operação',
+};
+
+/**
+ * Prisma entrega `costUsd` como Decimal, que vira string no JSON. O front
+ * espera número para somar e formatar.
+ */
+function serializeRun<T extends { costUsd: unknown }>(run: T) {
+  return {
+    ...run,
+    costUsd: run.costUsd == null ? null : Number(run.costUsd),
+  };
+}
 
 const SOURCE_IDS = [
   'linkedin',
@@ -204,12 +246,20 @@ export async function adminRoutes(app: FastifyInstance) {
   // GET /api/admin/ai-runs — list AI operations
   app.get<{
     Querystring: { page?: string; limit?: string; type?: string };
-  }>('/api/admin/ai-runs', async (request) => {
+  }>('/api/admin/ai-runs', async (request, reply) => {
     const page = request.query.page ? parseInt(request.query.page, 10) : 1;
     const limit = request.query.limit ? parseInt(request.query.limit, 10) : 20;
-    const type = request.query.type;
 
-    const where = type ? { type: type as any } : {};
+    // O filtro vivia como `type as any`: qualquer BESTA na query virava erro do
+    // Prisma e a tela recebia 500 em vez de uma lista vazia.
+    const parsedType = aiRunTypeSchema.safeParse(request.query.type);
+    if (request.query.type && !parsedType.success) {
+      return reply.status(400).send({
+        error: `Filtro inválido. Use um de: ${AI_RUN_TYPES.join(', ')}`,
+      });
+    }
+
+    const where = parsedType.success ? { type: aiRunTypeSchema.parse(parsedType.data) } : {};
 
     const [runs, total] = await Promise.all([
       prisma.aiRun.findMany({
@@ -221,22 +271,83 @@ export async function adminRoutes(app: FastifyInstance) {
       prisma.aiRun.count({ where }),
     ]);
 
-    // Calculate estimated cost (rough estimate based on tokens)
-    const runsWithCost = runs.map((run) => {
-      const promptTokens = run.promptTokens ?? 0;
-      const completionTokens = run.completionTokens ?? 0;
-      // Rough cost estimate: $0.01/1K prompt tokens, $0.03/1K completion tokens
-      const estimatedCost = (promptTokens / 1000) * 0.01 + (completionTokens / 1000) * 0.03;
-
-      return {
-        ...run,
-        estimatedCostUsd: Number(estimatedCost.toFixed(6)),
-      };
-    });
+    const data = runs.map(serializeRun);
 
     return {
-      data: runsWithCost,
+      data,
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    };
+  });
+
+  // GET /api/admin/ai-usage — custo e volume por tipo de operação
+  //
+  // É o que responde "quanto estou gastando com IA e com o quê". Sem isto, os
+  // ai_runs existiam mas ninguém conseguia ver o total.
+  app.get<{ Querystring: { days?: string } }>('/api/admin/ai-usage', async (request) => {
+    const days = Math.min(Math.max(parseInt(request.query.days ?? '30', 10) || 30, 1), 365);
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+    const grouped = await prisma.aiRun.groupBy({
+      by: ['type'],
+      where: { createdAt: { gte: since } },
+      _count: { _all: true },
+      _sum: {
+        promptTokens: true,
+        completionTokens: true,
+        costUsd: true,
+      },
+    });
+
+    const runs = await prisma.aiRun.findMany({
+      where: { createdAt: { gte: since } },
+      select: { promptTokens: true, completionTokens: true, model: true, costUsd: true },
+    });
+
+    const byType = grouped
+      .map((g) => ({
+        type: g.type,
+        calls: g._count._all,
+        promptTokens: g._sum.promptTokens ?? 0,
+        completionTokens: g._sum.completionTokens ?? 0,
+        costUsd: Number((g._sum.costUsd ?? 0).toFixed(6)),
+      }))
+      .sort((a, b) => b.costUsd - a.costUsd);
+
+    const totals = byType.reduce(
+      (acc, t) => ({
+        calls: acc.calls + t.calls,
+        promptTokens: acc.promptTokens + t.promptTokens,
+        completionTokens: acc.completionTokens + t.completionTokens,
+        costUsd: Number((acc.costUsd + t.costUsd).toFixed(6)),
+      }),
+      { calls: 0, promptTokens: 0, completionTokens: 0, costUsd: 0 },
+    );
+
+    // Registros gravados antes do custo passar a ser persistido têm tokens mas
+    // custoUsd nulo. Sem isto o total viria com um buraco silencioso logo após a
+    // mudança. Só as linhas sem custo entram na conta — estimar também as que já
+    // têm valor contaria o mesmo gasto duas vezes, que foi a primeira versão
+    // daqui e produzia total inflado.
+    const estimatedMissingCostUsd = Number(
+      runs
+        .filter((run) => run.costUsd == null)
+        .reduce(
+          (acc, run) =>
+            acc + estimateCostUsd(run.model, run.promptTokens ?? 0, run.completionTokens ?? 0),
+          0,
+        )
+        .toFixed(6),
+    );
+
+    const models = [...new Set(runs.map((r) => r.model))].sort();
+
+    return {
+      days,
+      totals,
+      byType,
+      models,
+      // Só é diferente de zero enquanto existirem linhas antigas sem custo.
+      estimatedMissingCostUsd,
     };
   });
 }

@@ -52,7 +52,11 @@ Description: ${description.slice(0, 6000)}`,
       },
     ];
 
-    const response = await this.ai.chat(messages, { temperature: 0.2, maxTokens: 2000 });
+    const response = await this.ai.chat(messages, {
+      temperature: 0.2,
+      maxTokens: 2000,
+      type: 'REQUIREMENT_EXTRACT',
+    });
 
     try {
       return JSON.parse(response.content) as JobExtraction;

@@ -167,7 +167,11 @@ Se a vaga contiver algum destes termos no título, avalie com cuidado e consider
       },
     ];
 
-    const response = await this.ai.chat(messages, { temperature: 0.3, maxTokens: 2000 });
+    const response = await this.ai.chat(messages, {
+      temperature: 0.3,
+      maxTokens: 2000,
+      type: 'JOB_ANALYZE',
+    });
 
     try {
       return JSON.parse(response.content) as JobAnalysis;

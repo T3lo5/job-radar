@@ -70,7 +70,11 @@ ${cvText.slice(0, 6000)}`,
       },
     ];
 
-    const response = await this.ai.chat(messages, { temperature: 0.3, maxTokens: 4000 });
+    const response = await this.ai.chat(messages, {
+      temperature: 0.3,
+      maxTokens: 4000,
+      type: 'CV_OPTIMIZE',
+    });
 
     try {
       return JSON.parse(response.content) as CvOptimization;
@@ -132,7 +136,11 @@ ${jobTitle ? `Job Title: ${jobTitle}\n\n` : ''}${jobDescription.slice(0, 4000)}`
       },
     ];
 
-    const response = await this.ai.chat(messages, { temperature: 0.2, maxTokens: 4000 });
+    const response = await this.ai.chat(messages, {
+      temperature: 0.2,
+      maxTokens: 4000,
+      type: 'CV_OPTIMIZE',
+    });
 
     try {
       return JSON.parse(response.content) as CvOptimization;

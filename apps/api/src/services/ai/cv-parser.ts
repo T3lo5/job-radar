@@ -57,7 +57,11 @@ IMPORTANT RULES:
       },
     ];
 
-    const response = await this.ai.chat(messages, { temperature: 0.1, maxTokens: 3000 });
+    const response = await this.ai.chat(messages, {
+      temperature: 0.1,
+      maxTokens: 3000,
+      type: 'CV_PARSE',
+    });
 
     try {
       return JSON.parse(response.content) as CvData;

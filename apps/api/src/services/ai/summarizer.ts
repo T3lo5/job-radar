@@ -20,7 +20,11 @@ export class Summarizer {
       },
     ];
 
-    const response = await this.ai.chat(messages, { temperature: 0.3, maxTokens: 500 });
+    const response = await this.ai.chat(messages, {
+      temperature: 0.3,
+      maxTokens: 500,
+      type: 'SUMMARIZE',
+    });
     return response.content;
   }
 }
