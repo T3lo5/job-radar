@@ -11,6 +11,10 @@ export interface ResultadoColeta {
   coletadas: number;
   /** Uma entrada por fonte que falhou (ou lista vazia). */
   erros: string[];
+  /** Fontes consultadas nesta coleta (ids). */
+  fontesExecutadas?: string[];
+  /** Fontes desativadas que não foram consultadas (ids). */
+  fontesPuladas?: string[];
 }
 
 export interface TextoResultado {
@@ -19,13 +23,47 @@ export interface TextoResultado {
   temErro: boolean;
 }
 
+/** "9 fontes consultadas; 1 desativada: linkedin." — vazio se não houve relatório. */
+function resumoFontes(r: ResultadoColeta): string {
+  const executadas = r.fontesExecutadas ?? [];
+  const puladas = r.fontesPuladas ?? [];
+  const partes: string[] = [];
+
+  if (executadas.length > 0) {
+    partes.push(
+      `${executadas.length} ${executadas.length === 1 ? 'fonte consultada' : 'fontes consultadas'}`,
+    );
+  }
+  if (puladas.length > 0) {
+    partes.push(
+      `${puladas.length} ${puladas.length === 1 ? 'desativada' : 'desativadas'}: ${puladas.join(', ')}`,
+    );
+  }
+
+  return partes.length > 0 ? ` ${partes.join('; ')}.` : '';
+}
+
 export function textoResultadoColeta(r: ResultadoColeta): TextoResultado {
   const temErro = r.erros.length > 0;
+  const executadas = r.fontesExecutadas ?? [];
+  const puladas = r.fontesPuladas ?? [];
+
+  // Tudo desligado não é "as fontes responderam, mas nada passou": nenhuma
+  // fonte foi chamada. Dizer o contrário faria o usuário caçar filtro errado.
+  if (executadas.length === 0 && puladas.length > 0) {
+    return {
+      titulo: 'Coleta não executada — todas as fontes estão desativadas',
+      detalhe: 'Nenhuma fonte foi consultada. Reative ao menos uma na lista abaixo.',
+      temErro: false,
+    };
+  }
+
+  const fontes = resumoFontes(r);
 
   if (r.coletadas === 0 && !temErro) {
     return {
       titulo: 'Coleta concluída — nenhuma vaga nova',
-      detalhe: 'As fontes responderam, mas nada passou nos filtros ou tudo já estava salvo.',
+      detalhe: `As fontes responderam, mas nada passou nos filtros ou tudo já estava salvo.${fontes}`,
       temErro: false,
     };
   }
@@ -33,9 +71,10 @@ export function textoResultadoColeta(r: ResultadoColeta): TextoResultado {
   const vagas = r.coletadas === 1 ? '1 vaga nova' : `${r.coletadas} vagas novas`;
   return {
     titulo: temErro ? `Coleta parcial — ${vagas}` : `Coleta concluída — ${vagas}`,
-    detalhe: temErro
-      ? `${r.erros.length} ${r.erros.length === 1 ? 'fonte falhou' : 'fontes falharam'} (as outras entraram).`
-      : 'Prontas para processamento na fila.',
+    detalhe:
+      (temErro
+        ? `${r.erros.length} ${r.erros.length === 1 ? 'fonte falhou' : 'fontes falharam'} (as outras entraram).`
+        : 'Prontas para processamento na fila.') + fontes,
     temErro,
   };
 }

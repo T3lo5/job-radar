@@ -15,6 +15,15 @@ import { SESSION_COOKIE, hasAccount, resolveSession } from '../services/auth.js'
  */
 const PUBLIC_PREFIXES = ['/health', '/health/ready', '/match/', '/api/auth/'];
 
+/**
+ * Rotas que exigem papel ADMIN.
+ *
+ * São as que trocam credenciais globais: provedor/base URL de IA, token do
+ * Telegram e cron. Antes, qualquer sessão — inclusive uma criada pelo signup
+ * público — podia reconfigurá-las e redirecionar CVs para outro host.
+ */
+const ADMIN_PREFIXES = ['/api/admin', '/api/setup'];
+
 /** Metadado não sensível usado pelo front para decidir entre login e wizard. */
 function isPublic(url: string): boolean {
   return PUBLIC_PREFIXES.some((prefix) => url.startsWith(prefix)) || url === '/api/setup/status';
@@ -39,6 +48,16 @@ export async function authGuard(app: FastifyInstance): Promise<void> {
       return reply.status(401).send({
         error: 'unauthorized',
         message: 'Sessão inválida ou expirada',
+      });
+    }
+
+    if (
+      ADMIN_PREFIXES.some((prefix) => request.url.startsWith(prefix)) &&
+      resolved.user.role !== 'ADMIN'
+    ) {
+      return reply.status(403).send({
+        error: 'forbidden',
+        message: 'Esta operação exige uma conta administradora.',
       });
     }
 

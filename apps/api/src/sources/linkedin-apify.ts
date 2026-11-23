@@ -7,6 +7,42 @@ import { fetchWithTimeout } from '../utils/http.js';
 const DEFAULT_APIFY_ACTOR_URL =
   'https://api.apify.com/v2/acts/curious_coder~linkedin-jobs-scraper/run-sync-get-dataset-items';
 
+/**
+ * Hosts aceitos para o `baseUrl` configurado.
+ *
+ * O valor vem do settings (digitado pelo usuário) e era usado como destino do
+ * POST com o token do Apify. Sem allowlist, um `baseUrl` qualquer recebia o
+ * token — e como o token ia na query string, ele também aparecia em log de
+ * proxy, histórico e mensagem de erro. Agora o token vai no header
+ * `Authorization` e o destino tem que ser https em api.apify.com.
+ */
+const APIFY_ALLOWED_HOSTS = new Set(['api.apify.com']);
+
+/**
+ * Valida o `baseUrl` do Apify. Devolve `null` quando não é permitido e o
+ * default quando não há valor configurado. Query e hash são descartados: o
+ * endpoint do ator não usa nenhum dos dois.
+ */
+export function resolveApifyBaseUrl(raw: string | null | undefined): string | null {
+  if (!raw || raw.trim() === '') return DEFAULT_APIFY_ACTOR_URL;
+
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+
+  if (url.protocol !== 'https:') return null;
+  if (!APIFY_ALLOWED_HOSTS.has(url.hostname.toLowerCase())) return null;
+  if (url.username || url.password) return null;
+
+  url.search = '';
+  url.hash = '';
+
+  return url.toString();
+}
+
 interface ApifyJob {
   title?: string;
   company?: string;
@@ -42,19 +78,27 @@ export async function fetchLinkedInJobs(query: SourceQuery): Promise<NormalizedJ
     return [];
   }
 
-  const baseUrl =
-    (await settingsService.get(SETTINGS_SCOPE.APIFY, APIFY_SETTINGS.BASE_URL)) ||
-    DEFAULT_APIFY_ACTOR_URL;
+  const configuredBaseUrl = await settingsService.get(
+    SETTINGS_SCOPE.APIFY,
+    APIFY_SETTINGS.BASE_URL,
+  );
+  const baseUrl = resolveApifyBaseUrl(configuredBaseUrl);
+  if (!baseUrl) {
+    // Não ecoa o valor configurado: ele pode conter token colado por engano.
+    console.warn('Apify baseUrl inválida; use https://api.apify.com/... — coleta ignorada');
+    return [];
+  }
 
   const jobs: NormalizedJob[] = [];
 
   try {
     const keywords = query.keywords.length > 0 ? query.keywords.join(' ') : 'developer';
 
-    const response = await fetchWithTimeout(`${baseUrl}?token=${token}`, {
+    const response = await fetchWithTimeout(baseUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
         keywords,

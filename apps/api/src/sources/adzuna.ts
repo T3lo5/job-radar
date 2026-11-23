@@ -56,6 +56,10 @@ export async function fetchAdzuna(query: SourceQuery): Promise<NormalizedJob[]> 
   }
 
   const country = 'br';
+  // A Adzuna devolve só números (`salary_min`/`salary_max`), sem símbolo. Sem
+  // dizer a moeda, `detectCurrency` caía no default USD e a vaga brasileira era
+  // gravada em dólar — inflando compare de salário em ~5x.
+  const currency = 'BRL';
   const page = 1;
   const resultsPerPage = Math.min(query.limit ?? 20, 50);
   const keywords = query.keywords.join(' ');
@@ -101,7 +105,10 @@ export async function fetchAdzuna(query: SourceQuery): Promise<NormalizedJob[]> 
         description: raw.description ?? '',
         location: locationString,
         salary:
-          raw.salary_min && raw.salary_max ? `${raw.salary_min}-${raw.salary_max}` : undefined,
+          raw.salary_min != null && raw.salary_max != null
+            ? `${raw.salary_min}-${raw.salary_max}`
+            : undefined,
+        currency,
         url:
           raw.redirect_url ??
           `https://www.adzuna.com/jobs/search?q=${encodeURIComponent(raw.title)}`,

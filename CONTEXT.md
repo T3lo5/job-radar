@@ -32,6 +32,19 @@ Glossário de termos do domínio do Job Radar. Skills (`grill-with-docs`, `domai
 - 🟠 **Possível** (60-69)
 - 🔴 **Baixa** (<60)
 
+## Pesos do score de matching
+
+Distribuição dos 100 pontos do score de aderência (`apps/api/src/services/matching/engine.ts`):
+
+- **Tecnologias**: 40% (skill exata ou parcial da vaga vs. perfil)
+- **Experiência**: 22% (senioridade da vaga vs. senioridade do perfil)
+- **Senioridade**: 16% (nível da vaga vs. nível do perfil)
+- **Localização**: 10% (modalidade/região da vaga vs. preferência do perfil)
+- **Cloud/DevOps**: 7% (sobrepõe tecnologias, peso menor)
+- **Idiomas**: 5% (idioma exigido pela vaga vs. idiomas do perfil)
+
+Soma: 100%. Fixos em código, não configuráveis via Settings (sistema single-user; sem dados empíricos para justificar alteração).
+
 ## Estados de Candidatura
 
 - 🔵 **Encontrada** (default)

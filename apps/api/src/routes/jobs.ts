@@ -2,7 +2,9 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db/prisma.js';
 import { jobService } from '../services/job-service.js';
+import { keywordGapAnalyzer } from '../services/keyword-gap-analyzer.js';
 import { computeMatchScore } from '../services/matching/engine.js';
+import { getCurrentProfile, getCurrentUserId } from '../lib/current-user.js';
 import { httpUrl } from '../utils/validation.js';
 
 const jobsQuerySchema = z.object({
@@ -17,6 +19,13 @@ const jobsQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
   fromDate: z.coerce.date().optional(),
   toDate: z.coerce.date().optional(),
+  sort: z.enum(['date', 'match', 'title', 'salary']).default('date'),
+  discarded: z.enum(['active', 'discarded', 'all']).optional(),
+  minScore: z.coerce.number().int().min(0).max(100).optional(),
+  minSalary: z.coerce.number().int().min(0).optional(),
+  maxSalary: z.coerce.number().int().min(0).optional(),
+  minConfidence: z.coerce.number().int().min(0).max(100).optional(),
+  skill: z.string().min(1).max(100).optional(),
 });
 
 const createJobSchema = z.object({
@@ -54,6 +63,11 @@ const matchJobSchema = z.object({
   jobId: z.string().cuid(),
 });
 
+const evaluateAllSchema = z.object({
+  // Ids das vagas em tela. Vazio não avalia nada (a UI só manda o que carregou).
+  jobIds: z.array(z.string().cuid()).max(500),
+});
+
 const updateJobSchema = z.object({
   description: z.string().min(1).max(10000),
 });
@@ -61,7 +75,10 @@ const updateJobSchema = z.object({
 export async function jobsRoutes(app: FastifyInstance) {
   app.get('/api/jobs', { schema: { querystring: jobsQuerySchema } }, async (request) => {
     const query = request.query as z.infer<typeof jobsQuerySchema>;
-    return jobService.list(query);
+    // `sort=match`/`minScore` dependem do perfil da sessão; a lista em si é
+    // global (todas as vagas), o score não.
+    const profile = await getCurrentProfile(request);
+    return jobService.list({ ...query, profileId: profile?.id });
   });
 
   app.get(
@@ -89,7 +106,9 @@ export async function jobsRoutes(app: FastifyInstance) {
     let applicationId: string | undefined;
 
     if (applicationStatus) {
-      const profile = await prisma.profile.findFirst();
+      const profile = await prisma.profile.findUnique({
+        where: { userId: getCurrentUserId(request) },
+      });
       if (!profile) {
         return reply.status(404).send({ error: 'Profile not found' });
       }
@@ -130,12 +149,13 @@ export async function jobsRoutes(app: FastifyInstance) {
 
   app.post('/api/match/evaluate', { schema: { body: matchJobSchema } }, async (request, reply) => {
     const { jobId } = request.body as z.infer<typeof matchJobSchema>;
+    const userId = getCurrentUserId(request);
 
     // Antes eram três queries em paralelo, uma delas o catálogo inteiro de
     // skills — por requisição HTTP. O motor não precisa dele.
     const [job, profile] = await Promise.all([
       jobService.getJobWithSkills(jobId),
-      jobService.getProfileWithSkills(),
+      jobService.getProfileWithSkills(userId),
     ]);
 
     if (!job) {
@@ -152,13 +172,100 @@ export async function jobsRoutes(app: FastifyInstance) {
     return result;
   });
 
-  app.get('/api/match/results', async (_request, reply) => {
-    const profile = await jobService.getProfileWithSkills();
+  /**
+   * Avalia o match de várias vagas de uma vez (as que estão em tela).
+   *
+   * Reaproveita o mesmo motor do `/api/match/evaluate`, mas lê o perfil uma
+   * vez e busca todas as vagas num único `findMany` — sem N idas ao banco por
+   * vaga. Devolve `{ jobId, score }` por vaga avaliada.
+   */
+  app.post('/api/match/evaluate-all', { schema: { body: evaluateAllSchema } }, async (request) => {
+    const { jobIds } = request.body as z.infer<typeof evaluateAllSchema>;
+    const userId = getCurrentUserId(request);
+
+    const [jobs, profile] = await Promise.all([
+      jobService.getManyWithSkills(jobIds),
+      jobService.getProfileWithSkills(userId),
+    ]);
+
+    if (!profile) {
+      return { evaluated: 0, results: [] as Array<{ jobId: string; score: number }> };
+    }
+
+    const results: Array<{ jobId: string; score: number }> = [];
+    for (const job of jobs) {
+      const result = computeMatchScore(job, profile);
+      await jobService.upsertMatch(job.id, profile.id, result);
+      results.push({ jobId: job.id, score: result.score });
+    }
+
+    return { evaluated: results.length, results };
+  });
+
+  app.get('/api/match/results', async (request, reply) => {
+    const profile = await jobService.getProfileWithSkills(getCurrentUserId(request));
     if (!profile) {
       return reply.status(404).send({ error: 'Profile not found' });
     }
+    // A lista continua limitada (o top 50 é o que as telas consomem), mas
+    // devolve o total junto: a UI precisa saber que há mais.
     return jobService.listMatches(profile.id);
   });
+
+  app.get('/api/match/stats', async (request, reply) => {
+    const profile = await jobService.getProfileWithSkills(getCurrentUserId(request));
+    if (!profile) {
+      return reply.status(404).send({ error: 'Profile not found' });
+    }
+    return jobService.getMatchStats(profile.id);
+  });
+
+  /**
+   * Match de uma vaga específica.
+   *
+   * `{ match: null }` com 200 quando a vaga existe mas ainda não foi avaliada:
+   * é um estado normal da tela, não um erro. 404 fica reservado para vaga
+   * inexistente.
+   */
+  app.get(
+    '/api/jobs/:id/match',
+    { schema: { params: z.object({ id: z.string().cuid() }) } },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+
+      const job = await prisma.job.findUnique({ where: { id }, select: { id: true } });
+      if (!job) {
+        return reply.status(404).send({ error: 'Job not found' });
+      }
+
+      const profile = await jobService.getProfileWithSkills(getCurrentUserId(request));
+      if (!profile) {
+        return reply.status(404).send({ error: 'Profile not found' });
+      }
+
+      return { match: await jobService.getMatchForJob(id, profile.id) };
+    },
+  );
+
+  app.get(
+    '/api/jobs/:id/keyword-gap',
+    { schema: { params: z.object({ id: z.string().cuid() }) } },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const profile = await jobService.getProfileWithSkills(getCurrentUserId(request));
+      if (!profile) {
+        return reply.status(404).send({ error: 'Profile not found' });
+      }
+      try {
+        const report = await keywordGapAnalyzer.analyze(id, profile.userId);
+        return report;
+      } catch (err) {
+        return reply.status(404).send({
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    },
+  );
 
   app.patch(
     '/api/jobs/:id',
@@ -174,6 +281,34 @@ export async function jobsRoutes(app: FastifyInstance) {
 
       const updated = await jobService.updateDescription(id, description);
       return updated;
+    },
+  );
+
+  // Descartar: tira a vaga da lista geral e joga em "Descartes" (não exclui).
+  app.post(
+    '/api/jobs/:id/discard',
+    { schema: { params: z.object({ id: z.string().cuid() }) } },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      if (!(await jobService.getById(id))) {
+        return reply.status(404).send({ error: 'Job not found' });
+      }
+      const job = await jobService.discard(id);
+      return { id: job.id, discardedAt: job.discardedAt };
+    },
+  );
+
+  // Restaurar: desfaz o descarte e devolve a vaga para a lista geral.
+  app.post(
+    '/api/jobs/:id/restore',
+    { schema: { params: z.object({ id: z.string().cuid() }) } },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      if (!(await jobService.getById(id))) {
+        return reply.status(404).send({ error: 'Job not found' });
+      }
+      const job = await jobService.restore(id);
+      return { id: job.id, discardedAt: job.discardedAt };
     },
   );
 }

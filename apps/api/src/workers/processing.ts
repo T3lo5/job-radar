@@ -1,6 +1,7 @@
 import { Queue, Worker, type ConnectionOptions } from 'bullmq';
 import { PipelineOrchestrator } from '../services/pipeline/orchestrator.js';
 import { redisConnectionOptions, WORKER_LOCK_OPTIONS } from '../db/redis-connection.js';
+import { BACKOFF_TYPE, BACKOFF_WORKER_SETTINGS, MAX_ATTEMPTS } from './backoff.js';
 
 const PROCESSING_QUEUE = 'job-processing';
 const EXTRACTION_JOB = 'extract-job';
@@ -14,8 +15,8 @@ function getConnection(): ConnectionOptions {
 export const processingQueue = new Queue(PROCESSING_QUEUE, {
   connection: getConnection(),
   defaultJobOptions: {
-    attempts: 3,
-    backoff: { type: 'exponential', delay: 5000 },
+    attempts: MAX_ATTEMPTS,
+    backoff: { type: BACKOFF_TYPE },
     removeOnComplete: 10,
     removeOnFail: 50,
   },
@@ -94,7 +95,12 @@ export function createProcessingWorker(): Worker {
 
       await orchestrator.run(jobId, step);
     },
-    { connection: getConnection(), concurrency: 2, ...WORKER_LOCK_OPTIONS },
+    {
+      connection: getConnection(),
+      concurrency: 2,
+      ...WORKER_LOCK_OPTIONS,
+      settings: BACKOFF_WORKER_SETTINGS,
+    },
   );
 
   worker.on('completed', (job) => {

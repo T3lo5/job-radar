@@ -1,5 +1,5 @@
 import type { PrismaClient } from '../../generated/prisma/index.js';
-import type { AiRunType } from '../../generated/prisma/index.js';
+import type { AiRunType, Prisma } from '../../generated/prisma/index.js';
 import type { AIClient, AIClientConfig, AIMessage, AIResponse, AIChatOptions } from './types.js';
 import { estimateCostUsd } from './pricing.js';
 
@@ -33,7 +33,7 @@ export class InstrumentedAiClient implements AIClient {
 
     try {
       const response = await this.inner.chat(messages, options);
-      await this.logRun(type, response, null);
+      await this.logRun(type, response, null, options?.metadata);
 
       const cost = response.usage
         ? estimateCostUsd(
@@ -49,12 +49,22 @@ export class InstrumentedAiClient implements AIClient {
 
       return response;
     } catch (err) {
-      await this.logRun(type, { content: '', latencyMs: 0, usage: undefined }, err);
+      await this.logRun(
+        type,
+        { content: '', latencyMs: 0, usage: undefined },
+        err,
+        options?.metadata,
+      );
       throw err;
     }
   }
 
-  private async logRun(type: AiRunType, response: AIResponse, err: unknown): Promise<void> {
+  private async logRun(
+    type: AiRunType,
+    response: AIResponse,
+    err: unknown,
+    metadata?: Record<string, unknown>,
+  ): Promise<void> {
     try {
       if (err) {
         await this.prisma.aiRun.create({
@@ -63,6 +73,7 @@ export class InstrumentedAiClient implements AIClient {
             model: this.config.model,
             status: 'FAILED',
             error: err instanceof Error ? err.message : String(err),
+            metadata: metadata as Prisma.InputJsonValue | undefined,
           },
         });
         return;
@@ -85,7 +96,7 @@ export class InstrumentedAiClient implements AIClient {
             ? estimateCostUsd(this.config.model, promptTokens, completionTokens)
             : 0,
           status: 'SUCCESS',
-          metadata: { baseUrl: this.config.baseUrl },
+          metadata: { ...metadata, baseUrl: this.config.baseUrl },
         },
       });
     } catch (logErr) {

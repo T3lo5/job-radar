@@ -1,10 +1,39 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { prisma } from '../db/prisma.js';
 import { redis } from '../db/redis.js';
+import pino from 'pino';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16;
 const CACHE_TTL = 30;
+
+const log = pino({ name: 'settings-service', level: process.env.LOG_LEVEL ?? 'info' });
+
+/**
+ * Versão do formato do cache L2.
+ *
+ * O Redis guardava o valor JÁ DECIFRADO: quem tivesse acesso a backup, réplica
+ * ou `redis-cli` lia API keys e token do Telegram em texto claro, anulando a
+ * criptografia em repouso do Postgres. Agora segredo vai para o cache como
+ * ciphertext (os mesmos campos do banco) e é decifrado só em memória, no uso.
+ *
+ * A versão no nome da chave invalida entradas do formato antigo por construção
+ * e permite limpar o plaintext legado no boot (`purgeLegacyCache`).
+ */
+const CACHE_VERSION = 2;
+const CACHE_PREFIX = `settings:v${CACHE_VERSION}:`;
+
+/** Envelope do L2. Segredo nunca carrega o plaintext. */
+interface CacheEntry {
+  v: number;
+  encrypted: boolean;
+  /** Presente só quando `encrypted` é false. */
+  value?: string;
+  /** Ciphertext (AES-256-GCM), igual ao que está no Postgres. */
+  ciphertext?: string;
+  iv?: string;
+  tag?: string;
+}
 
 function getKey(): Buffer {
   const keyBase64 = process.env.SETTINGS_ENCRYPTION_KEY;
@@ -49,34 +78,126 @@ function decrypt(encryptedValue: string, iv: string, tag: string): string {
   return decrypted;
 }
 
-class SettingsService {
+export { encrypt, decrypt };
+
+export class SettingsService {
   private memoryCache = new Map<string, { value: string; expires: number }>();
 
+  /** Chave no Postgres (`Setting.key`). Mantida igual à do formato antigo. */
   private cacheKey(scope: string, key: string): string {
     return `settings:${scope}:${key}`;
   }
 
+  /** Chave no Redis, versionada — não colide com o formato legado. */
+  private redisKey(scope: string, key: string): string {
+    return `${CACHE_PREFIX}${scope}:${key}`;
+  }
+
+  /** Valor de uso a partir da linha do banco (decifra se necessário). */
+  private valueOf(setting: {
+    value: string;
+    encrypted: boolean;
+    encryptedValue: string | null;
+    iv: string | null;
+    tag: string | null;
+  }): string {
+    if (setting.encrypted && setting.encryptedValue && setting.iv && setting.tag) {
+      try {
+        return decrypt(setting.encryptedValue, setting.iv, setting.tag);
+      } catch {
+        // Chave de criptografia trocada/corrompida: devolve o placeholder em
+        // vez de derrubar o boot. Chamadas que dependem do segredo falham alto.
+        return setting.value;
+      }
+    }
+    return setting.value;
+  }
+
+  /**
+   * Serializa para o Redis sem plaintext de segredo.
+   *
+   * Segredo vira `{ encrypted: true, ciphertext, iv, tag }`; o resto vira
+   * `{ encrypted: false, value }`. A decisão é do banco (`Setting.encrypted`),
+   * não de quem chamou `set` — uma linha gravada antes desta mudança continua
+   * sendo tratada como segredo.
+   */
+  private encodeCacheEntry(setting: {
+    value: string;
+    encrypted: boolean;
+    encryptedValue: string | null;
+    iv: string | null;
+    tag: string | null;
+  }): string {
+    if (setting.encrypted && setting.encryptedValue && setting.iv && setting.tag) {
+      const entry: CacheEntry = {
+        v: CACHE_VERSION,
+        encrypted: true,
+        ciphertext: setting.encryptedValue,
+        iv: setting.iv,
+        tag: setting.tag,
+      };
+      return JSON.stringify(entry);
+    }
+
+    const entry: CacheEntry = { v: CACHE_VERSION, encrypted: false, value: setting.value };
+    return JSON.stringify(entry);
+  }
+
+  /** Decodifica uma entrada do L2. `null` = formato desconhecido, ler do banco. */
+  private decodeCacheEntry(raw: string): string | null {
+    let entry: CacheEntry;
+    try {
+      entry = JSON.parse(raw) as CacheEntry;
+    } catch {
+      return null;
+    }
+
+    if (!entry || entry.v !== CACHE_VERSION) return null;
+
+    if (!entry.encrypted) {
+      return typeof entry.value === 'string' ? entry.value : null;
+    }
+
+    if (!entry.ciphertext || !entry.iv || !entry.tag) return null;
+    try {
+      return decrypt(entry.ciphertext, entry.iv, entry.tag);
+    } catch {
+      return null;
+    }
+  }
+
   async get(scope: string, key: string): Promise<string | null> {
     const cacheKey = this.cacheKey(scope, key);
+    const redisKey = this.redisKey(scope, key);
 
-    // L1: memory cache
+    // L1: memory cache (processo local; plaintext só existe em memória)
     const memCached = this.memoryCache.get(cacheKey);
     if (memCached && memCached.expires > Date.now()) {
       return memCached.value;
     }
 
-    // L2: Redis cache
+    // L2: Redis cache — para segredo, apenas ciphertext
     try {
-      const redisCached = await redis.get(cacheKey);
+      const redisCached = await redis.get(redisKey);
       if (redisCached) {
-        this.memoryCache.set(cacheKey, {
-          value: redisCached,
-          expires: Date.now() + CACHE_TTL * 1000,
-        });
-        return redisCached;
+        const decoded = this.decodeCacheEntry(redisCached);
+        if (decoded !== null) {
+          this.memoryCache.set(cacheKey, {
+            value: decoded,
+            expires: Date.now() + CACHE_TTL * 1000,
+          });
+          return decoded;
+        }
+        // Formato antigo/corrompido: descarta para não reler lixo.
+        await redis
+          .del(redisKey)
+          .catch((err) =>
+            log.warn({ err, scope, key, redisKey }, 'erro ao deletar chave corrompida do Redis'),
+          );
       }
-    } catch {
-      // Redis unavailable, continue to DB
+    } catch (err) {
+      // Redis unavailable, continue to DB (L3). Log para observabilidade.
+      log.warn({ err, scope, key, redisKey }, 'Redis indisponível no get; fallback para Postgres');
     }
 
     // L3: Database
@@ -86,16 +207,7 @@ class SettingsService {
 
     if (!setting) return null;
 
-    let value: string;
-    if (setting.encrypted && setting.encryptedValue && setting.iv && setting.tag) {
-      try {
-        value = decrypt(setting.encryptedValue, setting.iv, setting.tag);
-      } catch {
-        value = setting.value;
-      }
-    } else {
-      value = setting.value;
-    }
+    const value = this.valueOf(setting);
 
     // Populate caches
     this.memoryCache.set(cacheKey, {
@@ -103,9 +215,10 @@ class SettingsService {
       expires: Date.now() + CACHE_TTL * 1000,
     });
     try {
-      await redis.setex(cacheKey, CACHE_TTL, value);
-    } catch {
+      await redis.setex(redisKey, CACHE_TTL, this.encodeCacheEntry(setting));
+    } catch (err) {
       // Redis unavailable
+      log.warn({ err, scope, key, redisKey }, 'Redis indisponível ao gravar cache; segue sem L2');
     }
 
     return value;
@@ -144,13 +257,41 @@ class SettingsService {
       });
     }
 
-    // Invalidate caches
+    // Invalidate caches. A chave legada (sem versão) também é apagada: ela
+    // podia conter o valor em texto claro de antes desta correção.
     this.memoryCache.delete(cacheKey);
     try {
-      await redis.del(cacheKey);
-    } catch {
+      await redis.del(this.redisKey(scope, key), cacheKey);
+    } catch (err) {
       // Redis unavailable
+      log.warn(
+        { err, scope, key, redisKey: this.redisKey(scope, key) },
+        'Redis indisponível ao invalidar cache; valor expira pelo TTL',
+      );
     }
+  }
+
+  /**
+   * Remove do Redis as chaves do formato antigo, que guardavam valores já
+   * decifrados. Chamado no boot (ticket 23) para não deixar plaintext de
+   * segredo em backup/réplica depois do deploy.
+   *
+   * Usa `SCAN`, não `KEYS`: não bloqueia o Redis mesmo com muitas chaves.
+   */
+  async purgeLegacyCache(): Promise<number> {
+    let cursor = '0';
+    let removidas = 0;
+
+    do {
+      const [proximo, chaves] = await redis.scan(cursor, 'MATCH', 'settings:*', 'COUNT', 100);
+      cursor = proximo;
+      const legadas = chaves.filter((chave) => !chave.startsWith(CACHE_PREFIX));
+      if (legadas.length > 0) {
+        removidas += await redis.del(...legadas);
+      }
+    } while (cursor !== '0');
+
+    return removidas;
   }
 
   async getAll(scope: string): Promise<Record<string, string>> {

@@ -13,7 +13,7 @@ import { MatchingStep } from './matching-step.js';
  * A dupla abaixo faz `skill.findMany` lançar. Se alguém voltar a chamá-lo, o
  * teste quebra em vez de ficar verde.
  */
-function criarCtx(job: unknown, profile: unknown) {
+function criarCtx(job: unknown, profile: unknown | unknown[]) {
   const skillFindMany = vi.fn(async () => {
     throw new Error('skill.findMany nao deve ser chamado pelo matching');
   });
@@ -27,6 +27,8 @@ function criarCtx(job: unknown, profile: unknown) {
   );
   const jobUpdate = vi.fn(async () => ({}));
 
+  const profiles = Array.isArray(profile) ? profile : profile ? [profile] : [];
+
   return {
     skillFindMany,
     upsert,
@@ -35,7 +37,7 @@ function criarCtx(job: unknown, profile: unknown) {
       jobId: 'job-1',
       prisma: {
         job: { findUnique: async () => job, update: jobUpdate },
-        profile: { findFirst: async () => profile },
+        profile: { findMany: async () => profiles },
         // É aqui que mora a garantia.
         skill: { findMany: skillFindMany, create: vi.fn(), createMany: vi.fn() },
         jobSkill: { upsert: vi.fn(), createMany: vi.fn() },
@@ -181,5 +183,22 @@ describe('MatchingStep', () => {
 
     expect(skillFindMany).not.toHaveBeenCalled();
     expect(upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('avalia todos os perfis, não só o primeiro', async () => {
+    const segundo = { ...(perfil([skill('1', 'React')]) as object), id: 'p2' } as never;
+    const { ctx, upsert } = criarCtx(vaga([skill('1', 'React')]), [
+      perfil([skill('1', 'React')]),
+      segundo,
+    ]);
+    const d = deps({ score: 75, breakdown: {} });
+
+    await new MatchingStep().run(ctx as never, d as never);
+
+    expect(upsert).toHaveBeenCalledTimes(2);
+    const ids = upsert.mock.calls.map(
+      ([arg]) => (arg as { create?: { profileId?: string } }).create?.profileId,
+    );
+    expect(ids).toEqual(['p1', 'p2']);
   });
 });

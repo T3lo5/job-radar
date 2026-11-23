@@ -1,12 +1,16 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { analyticsApi } from '../services/api';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Skeleton } from '../components/ui/skeleton';
 import { EmptyState } from '../components/empty-state';
+import { ErrorState } from '../components/error-state';
 import { ErrorBoundary } from '../components/error-boundary';
 import { BarChart3 } from 'lucide-react';
+import { APPLICATION_STATUS_LABELS, type ApplicationStatus } from '@job-radar/shared';
+import { formatRate, cohortDetail } from '../lib/analytics-format';
 
 const PERIODS = [
   { label: '7 dias', value: 7 },
@@ -16,8 +20,42 @@ const PERIODS = [
 
 function AnalyticsContent() {
   const [days, setDays] = useState(30);
+  const navigate = useNavigate();
 
-  const { data, isLoading } = useQuery({
+  const handleMatchRangeClick = (entry: { range: string }) => {
+    const params = new URLSearchParams();
+    switch (entry.range) {
+      case '90+':
+        params.set('minScore', '90');
+        break;
+      case '80-89':
+        params.set('minScore', '80');
+        params.set('maxScore', '89');
+        break;
+      case '70-79':
+        params.set('minScore', '70');
+        params.set('maxScore', '79');
+        break;
+      case '60-69':
+        params.set('minScore', '60');
+        params.set('maxScore', '69');
+        break;
+      case '50-59':
+        params.set('minScore', '50');
+        params.set('maxScore', '59');
+        break;
+      case '<50':
+        params.set('maxScore', '49');
+        break;
+    }
+    navigate(`/jobs?${params.toString()}`);
+  };
+
+  const handleSkillClick = (skillName: string) => {
+    navigate(`/jobs?skill=${encodeURIComponent(skillName)}`);
+  };
+
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['analytics', days],
     queryFn: () => analyticsApi.getOverview(days),
   });
@@ -59,6 +97,21 @@ function AnalyticsContent() {
     );
   }
 
+  if (isError) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-3xl font-display font-bold">Analytics</h1>
+        </div>
+        <ErrorState
+          title="Não foi possível carregar o analytics"
+          error={error}
+          onRetry={() => void refetch()}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -80,32 +133,45 @@ function AnalyticsContent() {
         </div>
       </div>
 
-      {/* KPI Cards */}
+      {/* KPI Cards — coorte por histórico, não foto do status atual */}
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardContent className="pt-6">
-            <div className="text-2xl font-bold">{data?.applications.total ?? 0}</div>
-            <p className="text-sm text-muted-foreground">Total aplicações</p>
+            <div className="text-2xl font-bold">{data?.cohort.total ?? 0}</div>
+            <p className="text-sm text-muted-foreground">Candidaturas no período</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card title="Candidaturas criadas no período que chegaram a entrevista, oferta ou rejeição, dividido pelo total criado no período.">
           <CardContent className="pt-6">
-            <div className="text-2xl font-bold text-accent">{data?.applications.applied ?? 0}</div>
-            <p className="text-sm text-muted-foreground">Aplicadas</p>
+            <div className="text-2xl font-bold text-accent">
+              {formatRate(data?.rates.responseRate)}
+            </div>
+            <p className="text-sm text-muted-foreground">Respostas na coorte</p>
+            <p className="text-xs text-muted-foreground">
+              {cohortDetail(data?.cohort.responded, data?.cohort.total)}
+            </p>
           </CardContent>
         </Card>
-        <Card>
+        <Card title="Candidaturas da coorte que chegaram a entrevista ou oferta, sobre o total da coorte.">
           <CardContent className="pt-6">
             <div className="text-2xl font-bold text-success">
-              {data?.rates.interviewRate ? (data.rates.interviewRate * 100).toFixed(0) + '%' : '0%'}
+              {formatRate(data?.rates.interviewRate)}
             </div>
-            <p className="text-sm text-muted-foreground">Taxa entrevista</p>
+            <p className="text-sm text-muted-foreground">Entrevistas na coorte</p>
+            <p className="text-xs text-muted-foreground">
+              {cohortDetail(data?.cohort.interviewed, data?.cohort.total)}
+            </p>
           </CardContent>
         </Card>
-        <Card>
+        <Card title="Candidaturas da coorte que chegaram a oferta, sobre o total da coorte.">
           <CardContent className="pt-6">
-            <div className="text-2xl font-bold text-warning">{data?.applications.offers ?? 0}</div>
-            <p className="text-sm text-muted-foreground">Ofertas</p>
+            <div className="text-2xl font-bold text-warning">
+              {formatRate(data?.rates.offerRate)}
+            </div>
+            <p className="text-sm text-muted-foreground">Ofertas na coorte</p>
+            <p className="text-xs text-muted-foreground">
+              {cohortDetail(data?.cohort.offered, data?.cohort.total)}
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -123,7 +189,12 @@ function AnalyticsContent() {
                   <XAxis dataKey="range" />
                   <YAxis />
                   <Tooltip />
-                  <Bar dataKey="count" fill="hsl(210 98% 55%)" />
+                  <Bar
+                    dataKey="count"
+                    fill="hsl(210 98% 55%)"
+                    onClick={handleMatchRangeClick}
+                    style={{ cursor: 'pointer' }}
+                  />
                 </BarChart>
               </ResponsiveContainer>
             ) : (
@@ -141,14 +212,16 @@ function AnalyticsContent() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Funil de Aplicações</CardTitle>
+            <CardTitle>Distribuição atual por status</CardTitle>
           </CardHeader>
           <CardContent>
             {data?.applications.byStatus ? (
               <div className="space-y-2">
                 {Object.entries(data.applications.byStatus).map(([status, count]) => (
                   <div key={status} className="flex justify-between items-center">
-                    <span className="text-sm">{status}</span>
+                    <span className="text-sm">
+                      {APPLICATION_STATUS_LABELS[status as ApplicationStatus] ?? status}
+                    </span>
                     <span className="font-medium">{count as number}</span>
                   </div>
                 ))}
@@ -176,7 +249,12 @@ function AnalyticsContent() {
             {data?.skills.mostFrequent && data.skills.mostFrequent.length > 0 ? (
               <div className="space-y-2">
                 {data.skills.mostFrequent.map((skill) => (
-                  <div key={skill.name} className="flex justify-between items-center">
+                  <div
+                    key={skill.name}
+                    className="flex justify-between items-center"
+                    onClick={() => handleSkillClick(skill.name)}
+                    style={{ cursor: 'pointer' }}
+                  >
                     <span className="text-sm">{skill.name}</span>
                     <span className="text-sm text-muted-foreground">{skill.count} vagas</span>
                   </div>
@@ -202,7 +280,12 @@ function AnalyticsContent() {
             {data?.skills.biggestGaps && data.skills.biggestGaps.length > 0 ? (
               <div className="space-y-2">
                 {data.skills.biggestGaps.map((gap) => (
-                  <div key={gap.name} className="flex justify-between items-center">
+                  <div
+                    key={gap.name}
+                    className="flex justify-between items-center"
+                    onClick={() => handleSkillClick(gap.name)}
+                    style={{ cursor: 'pointer' }}
+                  >
                     <span className="text-sm">{gap.name}</span>
                     <span className="text-sm text-muted-foreground">{gap.jobCount} vagas</span>
                   </div>

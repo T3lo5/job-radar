@@ -1,20 +1,12 @@
 import type {
   Job,
   Profile,
+  Seniority,
   Skill,
   ProfileSkill,
   ProfileLanguage,
 } from '../../generated/prisma/index.js';
-
-export interface MatchBreakdown {
-  technologies: number;
-  experience: number;
-  seniority: number;
-  location: number;
-  cloudDevOps: number;
-  languages: number;
-  [key: string]: number;
-}
+import type { MatchBreakdown, SkillEvidence } from '@job-radar/shared';
 
 export interface MatchResult {
   score: number;
@@ -69,6 +61,67 @@ const CLOUD_DEVOPS_KEYWORDS = [
   'lambda',
 ];
 
+/**
+ * Grafias e abreviações da MESMA skill.
+ *
+ * O primeiro termo do grupo é a forma canônica. Isto produz match cheio
+ * (`ALIAS`), não parcial: `JS` é `JavaScript`, não uma tecnologia vizinha.
+ *
+ * A lista é fechada de propósito. Comparar prefixos (`startsWith`/`includes`)
+ * é o que fazia `java` casar com `javascript` e `react` com `r`; qualquer
+ * termo novo aqui precisa ser uma grafia inequívoca, nunca um prefixo curto.
+ */
+const SYNONYM_GROUPS: ReadonlyArray<readonly string[]> = [
+  ['javascript', 'js', 'ecmascript'],
+  ['typescript', 'ts'],
+  ['postgresql', 'postgres', 'psql'],
+  ['nodejs', 'node'],
+  ['react', 'reactjs'],
+  ['vue', 'vuejs'],
+  ['kubernetes', 'k8s'],
+  ['aws', 'amazonwebservices'],
+  ['gcp', 'googlecloud'],
+  ['githubactions', 'ghactions'],
+  ['cicd', 'continuousintegration', 'continuousdelivery'],
+  ['csharp', 'c#'],
+];
+
+/**
+ * Tecnologias vizinhas: valem meio ponto (`GROUP`).
+ *
+ * A comparação é por igualdade do nome canônico dentro do grupo. A versão
+ * anterior usava `includes` nos dois sentidos, então o grupo `['java', ...]`
+ * aceitava `javascript` porque `'javascript'.includes('java')` — e o perfil
+ * ganhava crédito por uma skill que não tinha.
+ *
+ * Os membros dos grupos devem estar na forma canônica (já passada por
+ * `SYNONYM_GROUPS`), senão `k8s` ou `js` nunca seriam encontrados aqui.
+ */
+const RELATED_GROUPS: ReadonlyArray<readonly string[]> = [
+  ['react', 'reactnative', 'nextjs', 'gatsby', 'remix'],
+  ['vue', 'nuxt', 'vuex'],
+  ['angular', 'rxjs'],
+  ['nodejs', 'express', 'fastify', 'nestjs', 'koa'],
+  ['python', 'django', 'flask', 'fastapi'],
+  ['java', 'spring', 'springboot', 'kotlin'],
+  ['javascript', 'typescript', 'nodejs', 'react', 'vue', 'angular'],
+  ['postgresql', 'mysql', 'mariadb', 'sql'],
+  ['mongodb', 'dynamodb', 'couchdb'],
+  ['redis', 'memcached', 'elasticsearch'],
+  ['docker', 'kubernetes', 'helm'],
+  ['aws', 'gcp', 'azure', 'cloud'],
+];
+
+const SENIORITY_LEVELS: Record<Seniority, number> = {
+  UNKNOWN: 3,
+  INTERN: 1,
+  JUNIOR: 2,
+  MID: 3,
+  SENIOR: 4,
+  SPECIALIST: 5,
+  LEAD: 5,
+};
+
 interface JobWithSkills extends Job {
   skills?: Array<{ skill: Skill; required: boolean }>;
 }
@@ -78,31 +131,46 @@ interface ProfileWithRelations extends Profile {
   languages?: ProfileLanguage[];
 }
 
+/**
+ * Índice das skills do perfil.
+ *
+ * `byNormalized` responde "é o mesmo nome?" (`Node.js` = `Node`) e
+ * `byCanonical` responde "é a mesma skill escrita de outro jeito?" — inclui as
+ * grafias de `SYNONYM_GROUPS` e os aliases declarados no catálogo.
+ */
+interface ProfileSkillLookup {
+  byNormalized: Map<string, string>;
+  byCanonical: Map<string, string>;
+}
+
 export function computeMatchScore(job: JobWithSkills, profile: ProfileWithRelations): MatchResult {
   const matchedSkills: string[] = [];
   const partialSkills: string[] = [];
   const missingSkills: string[] = [];
+  const skillEvidence: SkillEvidence[] = [];
 
   // Só estas skills podem produzir um match sinônimo — ver
   // `collectRelevantSkills`. Trazer o catálogo inteiro para cá custava uma
   // query por vaga no pipeline e uma por requisição em /api/match/evaluate,
   // para varrer linhas que iam ser descartadas uma a uma.
   const relevantSkills = collectRelevantSkills(job, profile);
+  const lookup = buildProfileLookup(profile);
 
   const techScore = computeTechnologiesScore(
     job,
-    profile,
     relevantSkills,
+    lookup,
     matchedSkills,
     partialSkills,
     missingSkills,
+    skillEvidence,
   );
   // O cloud roda DEPOIS do score de tecnologias e mutava matched/partial, o que
   // colocava a mesma skill em duas listas ao mesmo tempo ('Go' aparecia em
   // partial e em missing) e devolvia skills que não tinham-spanhado o score.
   // Aqui o cloud só classifica em lista própria, sem tocar nas anteriores.
   const cloudSkills = job.skills?.map((js) => js.skill) ?? [];
-  const cloudScore = computeCloudDevOpsScore(profile, relevantSkills, cloudSkills);
+  const cloudScore = computeCloudDevOpsScore(relevantSkills, cloudSkills, lookup);
   const expScore = computeExperienceScore(profile, matchedSkills.length);
   const seniorityScore = computeSeniorityScore(job, profile);
   const locationScore = computeLocationScore(job, profile);
@@ -115,6 +183,7 @@ export function computeMatchScore(job: JobWithSkills, profile: ProfileWithRelati
     location: locationScore,
     cloudDevOps: cloudScore,
     languages: langScore,
+    skillEvidence,
   };
 
   const totalScore = Math.round(
@@ -138,49 +207,90 @@ export function computeMatchScore(job: JobWithSkills, profile: ProfileWithRelati
 
 function computeTechnologiesScore(
   job: JobWithSkills,
-  profile: ProfileWithRelations,
   relevantSkills: Skill[],
+  lookup: ProfileSkillLookup,
   matched: string[],
   partial: string[],
   missing: string[],
+  evidence: SkillEvidence[],
 ): number {
-  const jobSkills = job.skills?.map((js) => js.skill) ?? [];
-  const profileSkillNames = new Set(
-    (profile.skills ?? []).map((ps) => normalizeSkillName(ps.skill?.name ?? '')),
-  );
+  const jobSkills = job.skills?.map((js) => js.skill).filter(Boolean) ?? [];
 
   if (jobSkills.length === 0) return NEUTRAL_SCORE;
 
-  let totalWeight = 0;
   let earnedWeight = 0;
 
   for (const jobSkill of jobSkills) {
-    totalWeight += 1;
-    const normalizedName = normalizeSkillName(jobSkill.name);
+    const classification = classifyJobSkill(jobSkill, relevantSkills, lookup);
 
-    if (profileSkillNames.has(normalizedName)) {
+    if (classification.points === 1) {
       earnedWeight += 1;
       matched.push(jobSkill.name);
-      continue;
-    }
-
-    if (findSynonymMatch(jobSkill, relevantSkills, profileSkillNames)) {
-      earnedWeight += 1;
-      matched.push(jobSkill.name);
-      continue;
-    }
-
-    if (findRelatedMatch(jobSkill, profileSkillNames)) {
+    } else if (classification.points > 0) {
       earnedWeight += 0.5;
       partial.push(jobSkill.name);
-      continue;
+    } else {
+      missing.push(jobSkill.name);
     }
 
-    missing.push(jobSkill.name);
+    if (classification.evidence) evidence.push(classification.evidence);
   }
 
-  if (totalWeight === 0) return NEUTRAL_SCORE;
-  return Math.round((earnedWeight / totalWeight) * 100);
+  return Math.round((earnedWeight / jobSkills.length) * 100);
+}
+
+interface SkillClassification {
+  /** 1 = exata/sinônimo; 0.5 = relacionada; 0 = ausente. */
+  points: number;
+  evidence: SkillEvidence | null;
+}
+
+/**
+ * Classifica uma skill da vaga contra o perfil, na ordem que importa:
+ * nome igual, sinônimo declarado, tecnologia vizinha. Parar na primeira evita
+ * que uma skill apareça como exata e relacionada ao mesmo tempo.
+ */
+function classifyJobSkill(
+  jobSkill: Skill,
+  relevantSkills: Skill[],
+  lookup: ProfileSkillLookup,
+): SkillClassification {
+  const normalizedName = normalizeSkillName(jobSkill.name);
+
+  if (lookup.byNormalized.has(normalizedName)) {
+    return {
+      points: 1,
+      evidence: { skill: jobSkill.name, reason: 'EXACT' },
+    };
+  }
+
+  // Mesma skill em grafia conhecida (`JS` × `JavaScript`, `Postgres` ×
+  // `PostgreSQL`). O nome normalizado difere, então não caiu no exato acima.
+  const canonicalVia = lookup.byCanonical.get(canonicalSkillName(jobSkill.name));
+  if (canonicalVia) {
+    return {
+      points: 1,
+      evidence: { skill: jobSkill.name, reason: 'ALIAS', via: canonicalVia },
+    };
+  }
+
+  const aliasVia = findSynonymMatch(jobSkill, relevantSkills, lookup);
+  if (aliasVia) {
+    return {
+      points: 1,
+      evidence: { skill: jobSkill.name, reason: 'ALIAS', via: aliasVia },
+    };
+  }
+
+  const groupVia = findRelatedMatch(jobSkill, lookup);
+  if (groupVia) {
+    return {
+      points: 0.5,
+      evidence: { skill: jobSkill.name, reason: 'GROUP', via: groupVia },
+    };
+  }
+
+  return { points: 0, evidence: null };
 }
 
 function computeExperienceScore(profile: ProfileWithRelations, matchedSkillCount: number): number {
@@ -197,46 +307,18 @@ function computeExperienceScore(profile: ProfileWithRelations, matchedSkillCount
 }
 
 function computeSeniorityScore(job: Job, profile: Profile): number {
-  if (!profile.seniority) return NEUTRAL_SCORE;
+  // Perfil sem senioridade (ou 'UNKNOWN') não tem nível para comparar.
+  if (!profile.seniority || profile.seniority === 'UNKNOWN') return NEUTRAL_SCORE;
 
-  const seniorityLevels: Record<string, number> = {
-    INTERN: 1,
-    JUNIOR: 2,
-    MID: 3,
-    SENIOR: 4,
-    SPECIALIST: 5,
-    LEAD: 5,
-  };
+  const jobLevel = jobSeniorityLevel(job);
 
-  const profileLevel = seniorityLevels[profile.seniority] ?? 3;
-  const titleLower = job.title.toLowerCase();
-  let jobLevel = 3;
+  // Vaga sem senioridade nem sinal no título: não há como dizer que o
+  // candidato está acima ou abaixo. O código antigo assumia MID, o que
+  // penalizava todo perfil sênior em vagas que simplesmente não declararam o
+  // nível — informação ausente virava evidência contra o candidato.
+  if (jobLevel === null) return 100;
 
-  if (
-    titleLower.includes('estagiár') ||
-    titleLower.includes('intern') ||
-    titleLower.includes('trainee')
-  ) {
-    jobLevel = 1;
-  } else if (
-    titleLower.includes('júnior') ||
-    titleLower.includes('junior') ||
-    titleLower.includes('jr')
-  ) {
-    jobLevel = 2;
-  } else if (
-    titleLower.includes('sênior') ||
-    titleLower.includes('senior') ||
-    titleLower.includes('sr')
-  ) {
-    jobLevel = 4;
-  } else if (
-    titleLower.includes('lead') ||
-    titleLower.includes('principal') ||
-    titleLower.includes('staff')
-  ) {
-    jobLevel = 5;
-  }
+  const profileLevel = SENIORITY_LEVELS[profile.seniority];
 
   const diff = Math.abs(profileLevel - jobLevel);
   if (diff === 0) return 100;
@@ -244,6 +326,46 @@ function computeSeniorityScore(job: Job, profile: Profile): number {
   if (diff === 2) return 50;
   if (diff === 3) return 25;
   return 10;
+}
+
+/**
+ * Nível de senioridade da vaga.
+ *
+ * `job.seniority`, extraído da descrição, é a fonte primária; o título só é
+ * consultado quando o campo está ausente. Antes, um título sem "sênior" virava
+ * MID mesmo com `seniority: JUNIOR` preenchido — o campo era ignorado.
+ *
+ * `null` significa "sem sinal", diferente de MID (3).
+ */
+function jobSeniorityLevel(job: Job): number | null {
+  if (job.seniority && job.seniority !== 'UNKNOWN') {
+    return SENIORITY_LEVELS[job.seniority];
+  }
+
+  const titleLower = job.title.toLowerCase();
+
+  if (
+    titleLower.includes('estagiár') ||
+    titleLower.includes('intern') ||
+    titleLower.includes('trainee')
+  ) {
+    return 1;
+  }
+  if (titleLower.includes('júnior') || titleLower.includes('junior') || titleLower.includes('jr')) {
+    return 2;
+  }
+  if (titleLower.includes('sênior') || titleLower.includes('senior') || titleLower.includes('sr')) {
+    return 4;
+  }
+  if (
+    titleLower.includes('lead') ||
+    titleLower.includes('principal') ||
+    titleLower.includes('staff')
+  ) {
+    return 5;
+  }
+
+  return null;
 }
 
 function computeLocationScore(job: Job, profile: Profile): number {
@@ -281,14 +403,10 @@ function computeLocationScore(job: Job, profile: Profile): number {
 }
 
 function computeCloudDevOpsScore(
-  profile: ProfileWithRelations,
   relevantSkills: Skill[],
   jobSkills: Skill[],
+  lookup: ProfileSkillLookup,
 ): number {
-  const profileSkillNames = new Set(
-    (profile.skills ?? []).map((ps) => normalizeSkillName(ps.skill?.name ?? '')),
-  );
-
   // Comparação por igualdade/prefixo. A versão anterior aceitava `includes`
   // nos dois sentidos, o que classificava 'Go' como cloud porque
   // 'google cloud'.includes('go') — e 'R' porque 'terraform'.includes('r').
@@ -304,10 +422,9 @@ function computeCloudDevOpsScore(
 
   let matchedCount = 0;
   for (const skill of cloudSkills) {
-    const normalizedName = normalizeSkillName(skill.name);
-    if (profileSkillNames.has(normalizedName)) {
-      matchedCount++;
-    } else if (findSynonymMatch(skill, relevantSkills, profileSkillNames)) {
+    // Só match cheio conta aqui: relacionada (docker↔kubernetes) já recebe
+    // meio ponto em technologies e não deve inflar o critério de cloud.
+    if (classifyJobSkill(skill, relevantSkills, lookup).points === 1) {
       matchedCount++;
     }
   }
@@ -367,16 +484,60 @@ function normalizeSkillName(name: string): string {
 }
 
 /**
+ * Forma canônica: normalização + grafias conhecidas da mesma skill.
+ *
+ * `js` → `javascript`, `postgres` → `postgresql`. Nunca aproxima skills
+ * distintas: só o que está declarado em `SYNONYM_GROUPS`.
+ */
+function canonicalSkillName(name: string): string {
+  const normalized = normalizeSkillName(name);
+  return CANONICAL_BY_ALIAS.get(normalized) ?? normalized;
+}
+
+const CANONICAL_BY_ALIAS = new Map<string, string>();
+for (const group of SYNONYM_GROUPS) {
+  const canonical = group[0];
+  for (const term of group) CANONICAL_BY_ALIAS.set(term, canonical);
+}
+
+/**
+ * Índice das skills do perfil. `byCanonical` inclui os aliases declarados no
+ * catálogo (coluna `aliases`), porque eles são a fonte de sinônimo por skill.
+ */
+function buildProfileLookup(profile: ProfileWithRelations): ProfileSkillLookup {
+  const byNormalized = new Map<string, string>();
+  const byCanonical = new Map<string, string>();
+
+  for (const { skill } of profile.skills ?? []) {
+    if (!skill) continue;
+
+    const normalized = normalizeSkillName(skill.name);
+    if (normalized && !byNormalized.has(normalized)) {
+      byNormalized.set(normalized, skill.name);
+    }
+
+    for (const term of [skill.name, ...(skill.aliases ?? [])]) {
+      const canonical = canonicalSkillName(term);
+      if (canonical && !byCanonical.has(canonical)) {
+        byCanonical.set(canonical, skill.name);
+      }
+    }
+  }
+
+  return { byNormalized, byCanonical };
+}
+
+/**
  * Conjunto mínimo que pode gerar match sinônimo.
  *
  * `findSynonymMatch` só produz resposta a partir de duas coisas: os aliases da
  * própria skill da vaga, e os aliases das skills do perfil. Qualquer outra linha
  * do catálogo é percorrida e descartada — e como o filtro é
- * `profileSkillNames.has(...)`, ela nem chega a ter os aliases lidos.
+ * `lookup.byNormalized.has(...)`, ela nem chega a ter os aliases lidos.
  *
  * Por isso o recorte é UNION das skills da vaga com as do perfil, e não só as
  * do perfil: sem a skill da vaga na lista, `findSynonymMatch` não a encontraria
- * por id e devolveria falso em silencio, perdendo o match que ela mesma faria.
+ * por id e devolveria nulo em silencio, perdendo o match que ela mesma faria.
  *
  * Única premissa: os aliases vêm da cópia que veio na query da vaga, não de uma
  * segunda leitura do catálogo. São a mesma linha do banco — `include: { skill:
@@ -396,64 +557,56 @@ function collectRelevantSkills(job: JobWithSkills, profile: ProfileWithRelations
   return [...porId.values()];
 }
 
+/**
+ * Sinônimo: a skill da vaga e a do perfil são a MESMA skill escrita de outro
+ * jeito. Devolve o nome da skill do perfil que casou, para a evidência.
+ */
 function findSynonymMatch(
   targetSkill: Skill,
   relevantSkills: Skill[],
-  profileSkillNames: Set<string>,
-): boolean {
+  lookup: ProfileSkillLookup,
+): string | null {
   const target = relevantSkills.find((s) => s.id === targetSkill.id);
-  if (!target) return false;
+  if (!target) return null;
 
-  for (const alias of target.aliases) {
-    if (profileSkillNames.has(normalizeSkillName(alias))) return true;
+  for (const alias of target.aliases ?? []) {
+    const via = lookup.byCanonical.get(canonicalSkillName(alias));
+    if (via) return via;
   }
+
+  const targetCanonical = canonicalSkillName(targetSkill.name);
+  if (!targetCanonical) return null;
 
   for (const skill of relevantSkills) {
-    if (profileSkillNames.has(normalizeSkillName(skill.name))) {
-      if (
-        skill.aliases.some((a) => normalizeSkillName(a) === normalizeSkillName(targetSkill.name))
-      ) {
-        return true;
-      }
+    if (!lookup.byNormalized.has(normalizeSkillName(skill.name))) continue;
+    if ((skill.aliases ?? []).some((a) => canonicalSkillName(a) === targetCanonical)) {
+      return skill.name;
     }
   }
 
-  return false;
+  return null;
 }
 
-function findRelatedMatch(targetSkill: Skill, profileSkillNames: Set<string>): boolean {
-  const targetNormalized = normalizeSkillName(targetSkill.name);
+/**
+ * Tecnologia vizinha dentro de um grupo explícito. Devolve o nome da skill do
+ * perfil que casou, ou `null`.
+ *
+ * Sem `includes`: o casamento é por igualdade do nome canônico. É o que impede
+ * `java` de casar com `javascript` e `react` de casar com `r`.
+ */
+function findRelatedMatch(targetSkill: Skill, lookup: ProfileSkillLookup): string | null {
+  const targetCanonical = canonicalSkillName(targetSkill.name);
+  if (!targetCanonical) return null;
 
-  const relatedGroups = [
-    ['react', 'reactnative', 'nextjs', 'gatsby', 'remix'],
-    ['vue', 'nuxt', 'vuex'],
-    ['angular', 'rxjs'],
-    ['node', 'express', 'fastify', 'nestjs', 'koa'],
-    ['python', 'django', 'flask', 'fastapi'],
-    ['java', 'spring', 'springboot', 'kotlin'],
-    ['javascript', 'typescript', 'node', 'react', 'vue', 'angular'],
-    ['postgresql', 'mysql', 'mariadb', 'sql'],
-    ['mongodb', 'dynamodb', 'couchdb'],
-    ['redis', 'memcached', 'elasticsearch'],
-    ['docker', 'kubernetes', 'k8s', 'helm'],
-    ['aws', 'gcp', 'azure', 'cloud'],
-  ];
+  for (const group of RELATED_GROUPS) {
+    if (!group.includes(targetCanonical)) continue;
 
-  for (const group of relatedGroups) {
-    const targetInGroup = group.some(
-      (g) => targetNormalized.includes(g) || g.includes(targetNormalized),
-    );
-    if (targetInGroup) {
-      for (const profileSkill of profileSkillNames) {
-        if (
-          group.some((g) => profileSkill.includes(g) || g.includes(profileSkill)) &&
-          profileSkill !== targetNormalized
-        ) {
-          return true;
-        }
-      }
+    for (const member of group) {
+      if (member === targetCanonical) continue;
+      const via = lookup.byCanonical.get(member);
+      if (via) return via;
     }
   }
 
-  return false;
+  return null;
 }

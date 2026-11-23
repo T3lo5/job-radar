@@ -7,6 +7,7 @@ import {
   updateAiProvider,
   deleteAiProvider,
   setActiveAiProvider,
+  getDecryptedApiKey,
 } from '../services/ai-providers.js';
 import { testConnection } from '../services/ai/factory.js';
 import { prisma } from '../db/prisma.js';
@@ -29,13 +30,13 @@ const aiProviderUpdateSchema = z.object({
 });
 
 export async function aiProviderRoutes(app: FastifyInstance) {
-  // GET /api/ai-providers — list all
+  // GET /api/ai-providers — list all (sem expor apiKey)
   app.get('/api/ai-providers', async () => {
     const providers = await listAiProviders();
     return { providers };
   });
 
-  // GET /api/ai-providers/active — get active provider
+  // GET /api/ai-providers/active — get active provider (sem expor apiKey)
   app.get('/api/ai-providers/active', async () => {
     const provider = await getActiveAiProvider();
     return { provider };
@@ -98,9 +99,14 @@ export async function aiProviderRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: 'Provider not found' });
       }
 
+      const apiKey = await getDecryptedApiKey(id);
+      if (!apiKey) {
+        return reply.status(422).send({ ok: false, error: 'API key not configured' });
+      }
+
       const result = await testConnection({
         baseUrl: provider.baseUrl,
-        apiKey: provider.apiKey,
+        apiKey,
         model: provider.model,
       });
 

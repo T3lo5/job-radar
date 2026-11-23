@@ -17,11 +17,17 @@ import { profileRoutes } from './profile.js';
  */
 const prisma = new PrismaClient({ log: ['error'] });
 const MARCA = '__perfilrota__';
+let usuarioTesteId = '';
 
 async function app() {
   const f = Fastify({ logger: false });
   f.setValidatorCompiler(validatorCompiler);
   f.setSerializerCompiler(serializerCompiler);
+  // O guard global não é registrado aqui; simulamos o que ele anexa para que
+  // as rotas derivem o perfil da sessão em vez de buscarem "o primeiro".
+  f.addHook('preHandler', async (request) => {
+    (request as unknown as { user: { id: string } }).user = { id: usuarioTesteId };
+  });
   await f.register(profileRoutes);
   return f;
 }
@@ -30,6 +36,7 @@ async function semear() {
   const user = await prisma.user.create({
     data: { email: `${MARCA}@test.local`, password: 'x', name: 'Rota' },
   });
+  usuarioTesteId = user.id;
   await prisma.profile.create({ data: { userId: user.id, title: 'Dev' } });
 }
 
@@ -170,6 +177,69 @@ describe('POST skill com caixa diferente', () => {
     expect(
       await prisma.skill.count({ where: { name: { startsWith: MARCA, mode: 'insensitive' } } }),
     ).toBe(1);
+    await f.close();
+  });
+});
+
+describe('níveis de idioma em CEFR', () => {
+  it('aceita todos os códigos CEFR e NATIVE, persistindo cada um', async () => {
+    const f = await app();
+    const codigos = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2', 'NATIVE'];
+
+    for (const level of codigos) {
+      const r = await f.inject({
+        method: 'POST',
+        url: '/api/profile/languages',
+        payload: { language: `${MARCA}${level}`, level },
+      });
+      expect(r.statusCode).toBe(201);
+      expect(r.json().level).toBe(level);
+    }
+
+    const noBanco = await prisma.profileLanguage.findMany({
+      where: { profile: { user: { email: { contains: MARCA } } } },
+    });
+    expect(noBanco).toHaveLength(codigos.length);
+    await f.close();
+  });
+
+  it('edita um idioma para B2 e devolve o valor novo', async () => {
+    const f = await app();
+    const profile = await prisma.profile.findFirstOrThrow({
+      where: { user: { email: { contains: MARCA } } },
+    });
+    const lang = await prisma.profileLanguage.create({
+      data: { profileId: profile.id, language: 'Inglês', level: 'B1' },
+    });
+
+    const r = await f.inject({
+      method: 'PUT',
+      url: `/api/profile/languages/${lang.id}`,
+      payload: { language: 'Inglês', level: 'B2' },
+    });
+
+    expect(r.statusCode).toBe(200);
+    expect(r.json().level).toBe('B2');
+    await f.close();
+  });
+
+  it('rejeita o vocabulário antigo com 400', async () => {
+    const f = await app();
+
+    for (const level of ['BASIC', 'INTERMEDIATE', 'ADVANCED', 'FLUENT']) {
+      const r = await f.inject({
+        method: 'POST',
+        url: '/api/profile/languages',
+        payload: { language: 'Inglês', level },
+      });
+      expect(r.statusCode).toBe(400);
+    }
+
+    expect(
+      await prisma.profileLanguage.count({
+        where: { profile: { user: { email: { contains: MARCA } } } },
+      }),
+    ).toBe(0);
     await f.close();
   });
 });

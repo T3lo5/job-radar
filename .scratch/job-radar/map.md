@@ -27,7 +27,8 @@ Plataforma pessoal rodando localmente (`docker compose up`) com: perfil + CV, co
 - [08 — Migrations e seed](./issues/08-migrations-seed.md): Seed com 95 skills base categorizados + 1 usuário demo com perfil completo. Script `pnpm db:seed` idempotente.
 - [14 — Interface JobSource + RemoteOK](./issues/14-interface-jobsource.md): Interface `JobSource` em `@job-radar/shared`, tipos `NormalizedJob`/`SourceQuery`. Primeira fonte: RemoteOK (sem auth, JSON público). Registry com coleta paralela e isolamento de erros.
 - [10 — API CRUD Perfil](./issues/10-api-perfil.md): Endpoints REST para gerenciar perfil (GET/PUT profile, POST/DELETE skills, PUT preferences). Validação Zod. Upsert de skills no catálogo global.
-- [41 — Settings via UI (backend)](./issues/41-settings-via-ui.md): SettingsService com AES-256-GCM, cache L1/L2/L3, endpoints de setup/settings, completion gate. Frontend pendente.
+- [41 — Settings via UI (backend + frontend)](./issues/41-settings-via-ui.md): SettingsService com AES-256-GCM, cache L1/L2/L3, endpoints de setup/settings, completion gate. Frontend completo: páginas /setup (wizard com react-hook-form + zod) e /settings (abas IA, Fontes, Cron, Conta), hook useSettings, testes. `pnpm typecheck/lint/test` todos OK.
+- [42 — UX de passos opcionais no wizard](./issues/42-skip-optional-wizard-steps.md): Passos 2 (Perfil) e 4 (Cron) opcionais com "(opcional)" no título; botão "Pular" individual nesses passos; setup concluído com valores defaults editáveis depois em /settings. `pnpm typecheck/lint/test` todos OK.
 - [15 — Worker de coleta](./issues/15-worker-coleta.md): BullMQ queue `job-collection`, cron schedule, coleta paralela de todas as sources, dedup por hash, endpoints admin. Worker iniciado no boot.
 - [05 — Frontend Stack](./issues/05-frontend-stack.md): Vite + React 18 + Tailwind + Radix UI + TanStack Query + react-hook-form/zod + react-router-dom v6. Páginas: Dashboard, Profile, Jobs, Setup, Settings.
 - [06 — Validação de env](./issues/06-env-e-segredos.md): Zod schema para variáveis de ambiente. Falha rápido no boot se faltar variável crítica.
@@ -70,8 +71,6 @@ Plataforma pessoal rodando localmente (`docker compose up`) com: perfil + CV, co
 - Formato exato do prompt de extração de requisitos — depende de #13
 - Pesos finais do score de matching (os 35/20/15/10/10/5/5 são um chute inicial) — depende de #19
 - Critérios para "descrição suspeita" de vaga — fora do MVP, ver Out of scope
-- UX de "skipped" no wizard (passos 2 e 4 são opcionais — usuário pode voltar depois) — depende de #41
-- Como o `SettingsService` reage se o Redis cair (fallback pra DB sem cache?) — depende de #41
 
 ## Out of scope
 

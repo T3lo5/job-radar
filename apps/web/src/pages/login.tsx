@@ -12,6 +12,7 @@ export function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isPending, setIsPending] = useState(false);
+  const [allowSignup, setAllowSignup] = useState(false);
 
   useEffect(() => {
     document.title = 'Entrar — Job Radar';
@@ -19,6 +20,24 @@ export function LoginPage() {
     // seguintes, porque o efeito só roda na montagem.
     return () => {
       document.title = 'Job Radar';
+    };
+  }, []);
+
+  // O produto é single-user: o cadastro só aparece quando o servidor diz que
+  // está aberto (ALLOW_SIGNUP=true ou bootstrap sem conta). Antes o link estava
+  // sempre visível e levava a uma tela que devolvia 403.
+  useEffect(() => {
+    let ativo = true;
+    authApi
+      .status()
+      .then((status) => {
+        if (ativo) setAllowSignup(status.allowSignup);
+      })
+      .catch(() => {
+        if (ativo) setAllowSignup(false);
+      });
+    return () => {
+      ativo = false;
     };
   }, []);
 
@@ -94,6 +113,24 @@ export function LoginPage() {
                 'Entrar'
               )}
             </Button>
+            <p className="text-sm text-center text-muted-foreground">
+              Esqueceu a senha? Peça ao administrador para redefini-la.
+            </p>
+            {allowSignup && (
+              <p className="text-sm text-center text-muted-foreground">
+                Não tem uma conta?{' '}
+                <a
+                  href="/signup"
+                  className="font-medium text-primary hover:underline"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    navigate('/signup');
+                  }}
+                >
+                  Criar conta
+                </a>
+              </p>
+            )}
           </form>
         </CardContent>
       </Card>

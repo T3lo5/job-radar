@@ -1,4 +1,4 @@
-import { Redis, type RedisOptions } from 'ioredis';
+import type { RedisOptions } from 'ioredis';
 
 /**
  * Conexão para o BullMQ a partir do REDIS_URL completo.
@@ -7,22 +7,66 @@ import { Redis, type RedisOptions } from 'ioredis';
  * jogava fora senha, database e TLS. Com `redis://:senha@host:6380/1` a
  * conexão simplesmente falhava — e, pior, falhava tarde e sem mensagem clara.
  *
+ * Corrigir isso com `new Redis(URL).options` resolveu o parse e criou outro
+ * problema: cada chamada instanciava um cliente ioredis de verdade, que abre
+ * socket, entra na fila de reconexão e nunca é fechado. As filas chamam esta
+ * função no boot e os workers a cada job — eram conexões vazando para sempre.
+ * Agora as opções são derivadas da URL, sem cliente nenhum.
+ *
  * `maxRetriesPerRequest: null` é exigência do BullMQ: com o default do ioredis
  * (20), um job lento estouraria MaxRetriesPerRequestError no meio da execução.
  */
 
-const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
+const DEFAULT_REDIS_URL = 'redis://localhost:6379';
 
-export function redisConnectionOptions(): RedisOptions {
+/** Converte a URL em opções do ioredis, sem instanciar cliente. */
+export function parseRedisUrlOptions(rawUrl: string): RedisOptions {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    throw new Error(
+      `REDIS_URL inválida: "${rawUrl}". Use o formato redis://[:senha@]host[:porta][/db].`,
+    );
+  }
+
+  if (url.protocol !== 'redis:' && url.protocol !== 'rediss:') {
+    throw new Error(
+      `REDIS_URL com protocolo inesperado: "${url.protocol}". Use redis:// ou rediss://.`,
+    );
+  }
+
+  const options: RedisOptions = {
+    host: url.hostname || 'localhost',
+    port: url.port ? Number(url.port) : 6379,
+  };
+
+  // `decodeURIComponent` porque a URL codifica senha com `@`/`:`.
+  if (url.username) options.username = decodeURIComponent(url.username);
+  if (url.password) options.password = decodeURIComponent(url.password);
+
+  const db = url.pathname.replace(/^\//, '').trim();
+  if (db !== '') {
+    const database = Number(db);
+    if (!Number.isInteger(database) || database < 0) {
+      throw new Error(`REDIS_URL com database inválido: "${db}". Use um inteiro >= 0.`);
+    }
+    options.db = database;
+  }
+
+  if (url.protocol === 'rediss:') options.tls = {};
+
+  return options;
+}
+
+export function redisConnectionOptions(
+  rawUrl: string | undefined = process.env.REDIS_URL,
+): RedisOptions {
   return {
-    ...new Redis(REDIS_URL).options,
+    ...parseRedisUrlOptions(rawUrl || DEFAULT_REDIS_URL),
     maxRetriesPerRequest: null,
     enableReadyCheck: false,
   };
-}
-
-export function redisConnection(): RedisOptions {
-  return redisConnectionOptions();
 }
 
 /**

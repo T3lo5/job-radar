@@ -7,20 +7,27 @@ import { CvParser } from './cv-parser.js';
 import { Summarizer } from './summarizer.js';
 import { CvOptimizer } from './cv-optimizer.js';
 import { testConnection as testConnectionInternal } from './test-connection.js';
+import { getDecryptedApiKey } from '../ai-providers.js';
 import type { AIClient, AIClientConfig } from './types.js';
 
 export async function getConfig(): Promise<AIClientConfig> {
   const provider = await prisma.aiProvider.findFirst({
     where: { isActive: true },
+    select: { id: true, baseUrl: true, model: true },
   });
 
   if (!provider) {
     throw new Error('No active AI provider configured. Please add one in Settings > IA.');
   }
 
+  const apiKey = await getDecryptedApiKey(provider.id);
+  if (!apiKey) {
+    throw new Error('Active AI provider has no API key configured.');
+  }
+
   return {
     baseUrl: provider.baseUrl,
-    apiKey: provider.apiKey,
+    apiKey,
     model: provider.model,
   };
 }

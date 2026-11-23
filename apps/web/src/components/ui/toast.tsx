@@ -98,7 +98,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastPrimitive.Provider>
       {children}
-      <ToastPrimitive.ToastViewport className="fixed top-4 right-4 z-[100] flex flex-col gap-2 w-96">
+      <ToastPrimitive.ToastViewport className="fixed top-4 left-4 right-4 z-[100] flex flex-col gap-2 w-full sm:w-96">
         {toasts.map((t) => (
           <ToastPrimitive.Root
             key={t.id}

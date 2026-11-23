@@ -1,4 +1,5 @@
 import axios from 'axios';
+import type { MatchBreakdown } from '@job-radar/shared';
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:3001',
@@ -125,8 +126,18 @@ export interface Job {
   externalId: string | null;
   publishedAt: string | null;
   collectedAt: string;
+  discardedAt: string | null;
+  /** Score de match desta vaga para o perfil (null = não avaliada). */
+  matchScore: number | null;
   hash: string;
   status: string;
+  confidence: number;
+  confidenceLabel: 'baixa' | 'media' | 'alta';
+  confidenceBadges: Array<{
+    type: string;
+    label: string;
+    description: string;
+  }>;
 }
 
 export interface SetupStatus {
@@ -137,6 +148,11 @@ export interface SetupStatus {
 export interface SettingsByScope {
   scope: string;
   settings: Record<string, string>;
+  /** Presente no escopo `cron`: próxima execução real de cada agendamento. */
+  nextRuns?: {
+    jobCollectionCron: string | null;
+    dailyReportCron: string | null;
+  };
 }
 
 export interface AuthUser {
@@ -149,6 +165,8 @@ export interface AuthStatus {
   setupComplete: boolean;
   accountExists: boolean;
   needsSetup: boolean;
+  /** Cadastro público aberto (`ALLOW_SIGNUP=true` ou bootstrap sem conta). */
+  allowSignup: boolean;
 }
 
 export interface SessionInfo {
@@ -170,6 +188,9 @@ export const authApi = {
   login: (data: { email: string; password: string }) =>
     api.post<{ ok: boolean; user: AuthUser }>('/api/auth/login', data).then((r) => r.data),
 
+  signup: (data: { email: string; password: string; confirmPassword: string }) =>
+    api.post<{ ok: boolean; user: AuthUser }>('/api/auth/signup', data).then((r) => r.data),
+
   logout: () => api.post('/api/auth/logout').then((r) => r.data),
 
   me: () => api.get<{ user: AuthUser; expiresAt: string }>('/api/auth/me').then((r) => r.data),
@@ -180,6 +201,10 @@ export const authApi = {
 
   changePassword: (data: { currentPassword: string; newPassword: string }) =>
     api.post<{ ok: boolean }>('/api/auth/password', data).then((r) => r.data),
+
+  // --- Export / delete completa (ticket 34) --------------------------------
+  exportMe: () => api.get(`/api/auth/export/me`).then((r) => r.data),
+  deleteMe: () => api.delete(`/api/auth/me`).then((r) => r.data),
 };
 
 export const profileApi = {
@@ -238,7 +263,7 @@ export const profileApi = {
     },
   ) => api.put<Certification>(`/api/profile/certifications/${id}`, data).then((r) => r.data),
   removeCertification: (id: string) =>
-    api.delete(`/api/profile/certifications/${id}`).then((r) => r.data),
+    api.delete<Certification>(`/api/profile/certifications/${id}`).then((r) => r.data),
   // Projects
   addProject: (data: {
     name: string;
@@ -280,7 +305,19 @@ export const profileApi = {
     const formData = new FormData();
     formData.append('file', file);
     return api
-      .post<{ id: string; filename: string; mimeType: string }>('/api/resumes', formData, {
+      .post<{
+        id: string;
+        filename: string;
+        mimeType: string;
+        isDefault?: boolean;
+        uploadedAt?: string;
+        sensitiveIssues?: Array<{
+          type: 'cpf' | 'rg' | 'passport' | 'birthdate' | 'address' | 'marital_status' | 'photo';
+          severity: 'warning';
+          match: string;
+          message: string;
+        }>;
+      }>('/api/resumes', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
       .then((r) => r.data);
@@ -294,12 +331,34 @@ export const profileApi = {
           mimeType: string;
           isDefault: boolean;
           uploadedAt: string;
-          parsedJson: any;
+          parsedJson: unknown;
         }[]
       >('/api/resumes')
       .then((r) => r.data),
   deleteResume: (id: string) => api.delete(`/api/resumes/${id}`).then((r) => r.data),
   extractResume: (id: string) => api.post(`/api/resumes/${id}/extract`).then((r) => r.data),
+  atsCheck: (id: string) =>
+    api
+      .get<{
+        resumeId: string;
+        score: number;
+        issues: Array<{
+          severity: 'error' | 'warning';
+          code: string;
+          message: string;
+          snippet?: string;
+          confidence?: 'alta' | 'media' | 'baixa';
+          fix?: string;
+        }>;
+        stats: {
+          estimatedPages: number;
+          wordCount: number;
+          hasContactBlock: boolean;
+          hasTable: boolean;
+          hasMultiColumn: boolean;
+        };
+      }>(`/api/resumes/${id}/ats-check`)
+      .then((r) => r.data),
 };
 
 export const setupApi = {
@@ -314,7 +373,14 @@ export const setupApi = {
   saveTelegram: (data: { botToken: string; chatId: string }) =>
     api.post('/api/setup/telegram', data).then((r) => r.data),
   saveCron: (data: { jobCollectionCron: string; dailyReportCron?: string }) =>
-    api.post('/api/setup/cron', data).then((r) => r.data),
+    api
+      .post<{
+        jobCollectionCron: string;
+        dailyReportCron: string;
+        nextJobCollectionRun: string | null;
+        nextDailyReportRun: string | null;
+      }>('/api/setup/cron', data)
+      .then((r) => r.data),
   complete: () => api.post('/api/setup/complete').then((r) => r.data),
   testConnection: (data?: { baseUrl: string; apiKey: string; model: string }) =>
     api.post<{ ok: boolean; error?: string }>('/api/ai/test', data).then((r) => r.data),
@@ -374,7 +440,14 @@ export interface SourceStatus {
 
 export const adminApi = {
   collectNow: () =>
-    api.post<{ collected: number; errors: string[] }>('/api/admin/collect-now').then((r) => r.data),
+    api
+      .post<{
+        collected: number;
+        errors: string[];
+        executedSources: string[];
+        skippedSources: string[];
+      }>('/api/admin/collect-now')
+      .then((r) => r.data),
   collectAsync: () => api.post('/api/admin/collect-async').then((r) => r.data),
   processAll: () =>
     api.post<{ message: string; count: number }>('/api/admin/process-all').then((r) => r.data),
@@ -422,6 +495,10 @@ export const adminApi = {
         data: AiRun[];
         pagination: { page: number; limit: number; total: number; totalPages: number };
       }>('/api/admin/ai-runs', { params })
+      .then((r) => r.data),
+  sendDailyReport: () =>
+    api
+      .post<{ success: boolean; error?: string }>('/api/admin/send-daily-report')
       .then((r) => r.data),
 };
 
@@ -475,6 +552,13 @@ export interface JobsQueryParams {
   search?: string;
   fromDate?: Date;
   toDate?: Date;
+  sort?: string;
+  discarded?: 'active' | 'discarded' | 'all';
+  minScore?: number;
+  minSalary?: number;
+  maxSalary?: number;
+  minConfidence?: number;
+  skill?: string;
 }
 
 export interface JobsResponse {
@@ -518,13 +602,38 @@ export const jobsApi = {
     api.post<CreateJobResponse>('/api/jobs', data).then((r) => r.data),
   updateDescription: (id: string, description: string) =>
     api.patch<Job>(`/api/jobs/${id}`, { description }).then((r) => r.data),
+  discard: (id: string) =>
+    api.post<{ id: string; discardedAt: string }>(`/api/jobs/${id}/discard`).then((r) => r.data),
+  restore: (id: string) =>
+    api
+      .post<{ id: string; discardedAt: string | null }>(`/api/jobs/${id}/restore`)
+      .then((r) => r.data),
+  keywordGap: (id: string) =>
+    api
+      .get<{
+        score: number;
+        matched: string[];
+        partial: string[];
+        missing: string[];
+        gaps: Array<{
+          keyword: string;
+          category: 'required' | 'nice-to-have';
+          status: 'matched' | 'partial' | 'missing';
+          suggestion?: string;
+        }>;
+        recommendation: string;
+      }>(`/api/jobs/${id}/keyword-gap`)
+      .then((r) => r.data),
 };
 
-export interface MatchResult {
+export interface JobMatch {
   id: string;
   score: number;
-  breakdown: Record<string, number>;
+  breakdown: MatchBreakdown;
   computedAt: string;
+}
+
+export interface MatchResult extends JobMatch {
   job: {
     id: string;
     title: string;
@@ -535,20 +644,50 @@ export interface MatchResult {
   };
 }
 
+export interface MatchList {
+  data: MatchResult[];
+  /** Total de matches do perfil, mesmo que `data` traga só os 50 melhores. */
+  total: number;
+}
+
+export interface MatchStats {
+  total: number;
+  averageScore: number;
+  distribution: { range: string; count: number }[];
+}
+
 export const matchApi = {
   evaluate: (jobId: string) =>
     api.post<MatchResult>('/api/match/evaluate', { jobId }).then((r) => r.data),
-  getResults: () => api.get<MatchResult[]>('/api/match/results').then((r) => r.data),
+  /** Avalia várias vagas de uma vez (as que estão em tela). */
+  evaluateAll: (jobIds: string[]) =>
+    api
+      .post<{ evaluated: number; results: Array<{ jobId: string; score: number }> }>(
+        '/api/match/evaluate-all',
+        { jobIds },
+      )
+      .then((r) => r.data),
+  getResults: () => api.get<MatchList>('/api/match/results').then((r) => r.data),
+  /** Match desta vaga — não depende da lista paginada. */
+  getForJob: (jobId: string) =>
+    api.get<{ match: JobMatch | null }>(`/api/jobs/${jobId}/match`).then((r) => r.data),
+  getStats: () => api.get<MatchStats>('/api/match/stats').then((r) => r.data),
 };
 
 export interface Application {
   id: string;
+  jobId: string;
   status: string;
   notes: string | null;
   appliedAt: string | null;
   followUpAt: string | null;
+  atsUsed: string | null;
   salary: number | null;
   result: string | null;
+  /** JSON livre por candidatura: hoje guarda contato do recrutador. */
+  contacts: Record<string, unknown> | null;
+  createdAt?: string;
+  updatedAt?: string;
   job: {
     id: string;
     title: string;
@@ -565,19 +704,158 @@ export interface ApplicationsResponse {
   pagination: { page: number; limit: number; total: number; totalPages: number };
 }
 
+export interface ApplicationEvent {
+  id: string;
+  applicationId: string;
+  fromStatus: string | null;
+  toStatus: string;
+  note: string | null;
+  createdAt: string;
+}
+
+export type AttachmentKind = 'cover_letter' | 'portfolio' | 'other';
+
+export interface ApplicationAttachment {
+  id: string;
+  applicationId: string;
+  filename: string;
+  originalName: string;
+  mimeType: string;
+  size: number;
+  kind: AttachmentKind;
+  createdAt: string;
+  downloadUrl: string;
+}
+
+export interface KeywordGapReport {
+  score: number;
+  matched: string[];
+  partial: string[];
+  missing: string[];
+  gaps: Array<{
+    keyword: string;
+    category: 'required' | 'nice-to-have';
+    status: 'matched' | 'partial' | 'missing';
+    suggestion?: string;
+  }>;
+  recommendation: string;
+}
+
+/**
+ * Kit da candidatura: uma leitura que junta referências, não cópias.
+ *
+ * A carta continua vindo do gerador (área própria) e o CV das `ResumeVersion`;
+ * o kit só organiza por candidatura.
+ */
+export interface ApplicationKit {
+  application: Application & {
+    events: ApplicationEvent[];
+    attachments: ApplicationAttachment[];
+    job: Application['job'] & {
+      seniority: string | null;
+      salaryMin: number | null;
+      salaryMax: number | null;
+      salaryCurrency: string | null;
+      source?: { id: string; name: string } | null;
+    };
+  };
+  match: JobMatch | null;
+  analysis: {
+    id: string;
+    summary: string;
+    strengths: string[];
+    gaps: string[];
+    risks: string[];
+    recommendation: string;
+    generatedAt: string;
+  } | null;
+  keywordGap: KeywordGapReport | null;
+  cvVersions: Array<{
+    id: string;
+    resumeId: string;
+    jobId: string | null;
+    filename: string | null;
+    changesNote: string | null;
+    generatedAt: string;
+  }>;
+}
+
 export const applicationsApi = {
-  getList: (params: { page?: number; limit?: number; status?: string } = {}) =>
+  getList: (params: { page?: number; limit?: number; status?: string; jobId?: string } = {}) =>
     api.get<ApplicationsResponse>('/api/applications', { params }).then((r) => r.data),
   getById: (id: string) => api.get<Application>(`/api/applications/${id}`).then((r) => r.data),
+  // A rota devolve só o id criado (201), não a candidatura inteira. Tipar como
+  // `Application` fazia o caller acessar campos que nunca chegavam.
   create: (jobId: string, notes?: string) =>
-    api.post<Application>('/api/applications', { jobId, notes }).then((r) => r.data),
+    api.post<{ applicationId: string }>('/api/applications', { jobId, notes }).then((r) => r.data),
   updateStatus: (id: string, status: string, note?: string) =>
-    api.patch<Application>(`/api/applications/${id}/status`, { status, note }).then((r) => r.data),
+    api
+      .patch<{ application: Application }>(`/api/applications/${id}/status`, { status, note })
+      .then((r) => r.data),
   update: (id: string, data: Partial<Application>) =>
     api.patch<Application>(`/api/applications/${id}`, data).then((r) => r.data),
   updateFollowUp: (id: string, followUpAt: string | null) =>
     api.patch<Application>(`/api/applications/${id}/follow-up`, { followUpAt }).then((r) => r.data),
   delete: (id: string) => api.delete(`/api/applications/${id}`).then((r) => r.data),
+
+  // --- Follow-ups (anti-ghosting) -------------------------------------------
+  getPendingFollowUps: () =>
+    api
+      .get<
+        Array<{
+          id: string;
+          jobId: string;
+          jobTitle: string;
+          jobCompany: string;
+          jobUrl: string;
+          status: string;
+          followUpAt: string | null;
+          daysIdle: number;
+          cadenceDays: number;
+          lastEvent: {
+            id: string;
+            toStatus: string;
+            note: string | null;
+            createdAt: string;
+          } | null;
+        }>
+      >('/api/applications/follow-ups-pending')
+      .then((r) => r.data),
+  registerContact: (id: string, note?: string) =>
+    api
+      .post<{
+        application: unknown;
+        event: unknown;
+        nextFollowUp: string;
+      }>(`/api/applications/${id}/contact`, { note })
+      .then((r) => r.data),
+
+  // --- Kit ------------------------------------------------------------------
+  getKit: (id: string) =>
+    api.get<ApplicationKit>(`/api/applications/${id}/kit`).then((r) => r.data),
+  exportKit: (id: string, format: 'json' | 'csv') =>
+    api
+      .get(`/api/applications/${id}/export`, { params: { format }, responseType: 'blob' })
+      .then((r) => r.data as Blob),
+
+  // --- Anexos ---------------------------------------------------------------
+  listAttachments: (id: string) =>
+    api
+      .get<{ attachments: ApplicationAttachment[] }>(`/api/applications/${id}/attachments`)
+      .then((r) => r.data.attachments),
+  uploadAttachment: (id: string, file: File, kind: AttachmentKind) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api
+      .post<ApplicationAttachment>(`/api/applications/${id}/attachments`, form, {
+        params: { kind },
+      })
+      .then((r) => r.data);
+  },
+  deleteAttachment: (id: string, attachmentId: string) =>
+    api.delete(`/api/applications/${id}/attachments/${attachmentId}`).then((r) => r.data),
+  downloadAttachment: (attachment: ApplicationAttachment) =>
+    api.get(attachment.downloadUrl, { responseType: 'blob' }).then((r) => r.data as Blob),
 };
 
 export interface AnalyticsOverview {
@@ -595,10 +873,17 @@ export interface AnalyticsOverview {
     rejected: number;
     byStatus: Record<string, number>;
   };
+  cohort: {
+    total: number;
+    responded: number;
+    interviewed: number;
+    offered: number;
+  };
   rates: {
-    responseRate: number;
-    interviewRate: number;
-    offerRate: number;
+    /** `null` quando o denominador da coorte é zero (a UI mostra "—"). */
+    responseRate: number | null;
+    interviewRate: number | null;
+    offerRate: number | null;
   };
   matches: {
     distribution: { range: string; count: number }[];
@@ -625,6 +910,10 @@ export interface CvOptimizeResponse {
     description: string;
   }>;
   keywordsAdded: string[];
+  /** Termos sugeridos pela IA e descartados por não existirem nas fontes. */
+  keywordsDropped: string[];
+  /** Evidência das keywords aprovadas (alias encontrado e fonte). */
+  keywordEvidence: Array<{ term: string; matchedAlias?: string; sourceIndex?: number }>;
   /** Aviso de integridade: palavras-chave barradas por não existirem nas fontes. */
   warning?: string;
   summary: string;
@@ -637,6 +926,21 @@ export interface ResumeVersion {
   generatedAt: string;
 }
 
+export interface CoverLetterResult {
+  letter: string;
+  language: 'pt-BR' | 'en';
+  skillsClaimed: string[];
+  tokensUsed?: number;
+  descriptionTruncated: boolean;
+  descriptionChars: number;
+  integrity: {
+    fabricatedSkills: string[];
+    droppedKeywords: string[];
+    warning?: string;
+  };
+  warning?: string;
+}
+
 export const cvApi = {
   optimize: (data: { resumeId?: string; jobId?: string; jobDescription?: string }) =>
     api.post<CvOptimizeResponse>('/api/cv/optimize', data).then((r) => r.data),
@@ -644,6 +948,23 @@ export const cvApi = {
     api.post('/api/cv/export-pdf', data, { responseType: 'blob' }).then((r) => r.data as Blob),
   getVersions: (resumeId: string) =>
     api.get<ResumeVersion[]>(`/api/cv/versions/${resumeId}`).then((r) => r.data),
+  coverLetter: (data: { jobId: string; recruiterName?: string; language?: 'pt-BR' | 'en' }) =>
+    api.post<CoverLetterResult>('/api/cv/cover-letter', data).then((r) => r.data),
+  atsCheck: (data: { text: string; jobId?: string }) =>
+    api
+      .post<{
+        score: number;
+        issues: Array<{ severity: string; code: string; message: string; fix?: string }>;
+        stats: {
+          estimatedPages: number;
+          wordCount: number;
+          hasContactBlock: boolean;
+          hasTable: boolean;
+          hasMultiColumn: boolean;
+        };
+        keywordMatch?: { matched: string[]; missing: string[]; score: number };
+      }>('/api/cv/ats-check', data)
+      .then((r) => r.data),
 };
 
 /**

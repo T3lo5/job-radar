@@ -1,28 +1,33 @@
-# Job Radar — Manual Completo de Instalação, Configuração e Uso
+# Job Radar — Manual de Instalação, Configuração e Uso
 
 [![Node.js](https://img.shields.io/badge/Node.js-20-green.svg)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue.svg)](https://www.typescriptlang.org/)
-[![Tests](https://img.shields.io/badge/Tests-324%20passing-brightgreen.svg)](https://github.com/T3lo5/job-radar/actions)
+[![Tests](https://img.shields.io/badge/Tests-617%20passing-brightgreen.svg)](https://github.com/T3lo5/job-radar/actions)
 [![License](https://img.shields.io/badge/License-GPL--3.0-yellow.svg)](./LICENSE)
-[![Docker](https://img.shields.io/badge/Docker-ready-blue.svg)](https://hub.docker.com/)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
 > **Assistente pessoal de vagas: coleta, compara com o seu perfil (nota 0–100), otimiza seu CV com IA e organiza suas candidaturas.**
 
 ---
 
-## 📖 O que é este sistema?
+## 📖 Estado atual do projeto
 
-O **Job Radar** é uma aplicação completa que:
+O Job Radar é um projeto pessoal em desenvolvimento ativo. O que está **funcionando**:
 
-1. **Coleta vagas** de 9 fontes (RemoteOK, Remotive, LinkedIn, Google Jobs, Indeed, Adzuna, Jobicy, WeWorkRemotely) com agendamento automático
-2. **Compara cada vaga com o seu perfil** e calcula uma nota de aderência (0–100), mostrando o que falta
-3. **Otimiza seu currículo com IA** para cada vaga — sem inventar dados (verificado por código, não só por prompt)
-4. **Organiza suas candidaturas** num quadro Kanban com notas, contatos e follow-ups
-5. **Mostra quanto você gasta de IA** por operação, com alerta de custo
-6. **Envia resumo diário** das melhores vagas no Telegram
+- Coleta de vagas de múltiplas fontes (RemoteOK, Indeed, Adzuna, etc.)
+- Matching de perfil vs vaga com score 0–100 e breakdown por critério
+- Quadra Kanban de candidaturas (Encontrada → Aplicada → Entrevista → Oferta/Rejeitada)
+- Otimização de CV com IA (com "Regra de Ouro": a IA não pode atribuir skills que não estão no seu perfil)
+- Dashboard com analytics de vagas coletadas e candidaturas
+- Configuração de provedores de IA via UI (OpenAI, Anthropic, DeepSeek, Ollama, etc.)
+- Criptografia de settings sensíveis (AES-256-GCM)
+- Autenticação por sessão (cookie HttpOnly, multi-dispositivo)
 
-**Tudo roda no seu computador** — seus dados não saem da sua infraestrutura. Sem terminal obrigatório: tudo se configura pela interface.
+O que é **experimental / não está pronto para produção**:
+
+- **Deploy de produção via Docker:** o `docker-compose.prod.yml` existe mas o deploy não funciona de ponta a ponta (frontend aponta para `localhost:3001`, nginx remove o prefixo `/api`, container não roda migrations). Ver tickets em `.scratch/auditoria-2026-10-28/issues/`.
+- **Single-user:** o produto é desenhado para uma única conta. Criar uma segunda conta expõe dados da primeira. Fechar `/signup` ou implementar escopo por `userId` está nos tickets abertos.
+- **ATS heurístico:** o verificador de ATS pode dar falso positivo em CVs de uma coluna (score 80 com "MULTI_COLUMN"). Calibração pendente.
+- **Coleta dependente de fontes:** algumas fontes (Indeed, LinkedIn via Apify) podem retornar erro por anti-robô ou exigir credencial. Outras fontes seguem funcionando.
 
 ---
 
@@ -30,15 +35,15 @@ O **Job Radar** é uma aplicação completa que:
 
 ```
 ┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│ 9 Fontes de │────▶│ PostgreSQL  │────▶│  Pipeline   │────▶│   Kanban +  │
+│  Fontes de  │────▶│ PostgreSQL  │────▶│  Pipeline   │────▶│   Kanban +  │
 │   vagas     │     │  (dados)    │     │ RAW→DONE    │     │  Telegram   │
 └─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
-                           │                    │
-                           ▼                    ▼
-                    ┌─────────────┐     ┌─────────────┐
-                    │  API REST   │     │  IA (custo  │
-                    │  + Web UI   │     │  auditado)  │
-                    └─────────────┘     └─────────────┘
+                            │                    │
+                            ▼                    ▼
+                     ┌─────────────┐     ┌─────────────┐
+                     │  API REST   │     │  IA (custo  │
+                     │  + Web UI   │     │  auditado)  │
+                     └─────────────┘     └─────────────┘
 ```
 
 **Tecnologias:**
@@ -47,7 +52,6 @@ O **Job Radar** é uma aplicação completa que:
 - **Banco:** PostgreSQL 16 (dados) + Redis 7 + BullMQ (filas)
 - **IA:** provedor configurável pela UI (OpenAI, Anthropic, DeepSeek, Gemini, Ollama — qualquer API compatível com OpenAI)
 - **Frontend:** React 18 + Vite + Tailwind CSS + Radix UI
-- **Conta:** login próprio (email + senha, sessões multi-dispositivo, cookie HttpOnly)
 - **Monorepo:** pnpm workspaces (`apps/api`, `apps/web`, `packages/shared`)
 
 ---
@@ -81,7 +85,7 @@ cd job-radar
 .\dev-up.ps1
 ```
 
-O script faz tudo: confere dependências, limpa servidores antigos órfãos, sobe Postgres + Redis, roda migrations, popula o catálogo de skills, gera o Prisma Client e inicia API + Web.
+O script faz tudo: confere dependências, limpa servidores antigos órfãos, sobe Postgres + Redis, roda migrations, popula o catálogo de skills, gera o Prisma Client e inicia API + Web. Ele também gera automaticamente a `SETTINGS_ENCRYPTION_KEY` se estiver vazia no `.env`.
 
 Acesse:
 
@@ -137,7 +141,7 @@ Sem chave de IA o sistema funciona (coleta, matching por regras, Kanban). Com ch
 
 O **LinkedIn puro não precisa de nada** (usa a API pública de guest). Se alguma fonte só retornar erro, desative-a — as outras seguem trabalhando.
 
-Para buscar na hora: **🔍 Buscar Agora**. Para processar o que já foi coletado: **⚡ Processar Todas**. A tela mostra o progresso (com cronômetro) e o resultado (quantas entraram, quais fontes falharam).
+Para buscar na hora: **🔍 Buscar Agora**. Para processar o que já foi coletado: **⚡ Processar Todas**.
 
 ---
 
@@ -270,7 +274,7 @@ pnpm build          # build de packages e apps
 pnpm typecheck      # TypeScript em tudo
 pnpm lint           # ESLint em tudo
 pnpm format         # Prettier em tudo
-pnpm test           # 324 testes nos 3 workspaces
+pnpm test           # Testes nos 3 workspaces
 ```
 
 Banco (dentro de `apps/api`):
@@ -280,6 +284,8 @@ pnpm db:deploy    # aplica migrations
 pnpm db:seed      # popula skills + usuário demo (não apaga nada existente)
 pnpm db:studio    # abre o Prisma Studio
 ```
+
+> ⚠️ Não existe script `pnpm db:backup` nem `pnpm db:restore`. Backup manual via `docker compose exec postgres pg_dump`.
 
 ---
 
@@ -303,6 +309,7 @@ pnpm db:studio    # abre o Prisma Studio
 ├── CHANGELOG.md             # Histórico de mudanças
 ├── CONTRIBUTING.md          # Como contribuir
 ├── dev-up.sh / dev-down.sh  # Sobe/para o ambiente (e .ps1 no Windows)
+├── IMPROVEMENTS.md          # Melhorias recomendadas (estado honesto)
 └── package.json
 ```
 
@@ -325,30 +332,36 @@ docker compose exec postgres pg_dump -U jobradar jobradar > backup.sql
 ## 🧪 Testes e qualidade
 
 ```bash
-pnpm test         # 324 testes: 235 api + 72 web + 17 shared
+pnpm test         # Testes nos 3 workspaces (API + Web + Shared)
 pnpm typecheck    # TS estrito nos 3 workspaces
 pnpm lint         # ESLint, zero erros
 pnpm build        # build + smoke test do artefato
 ```
 
-O CI (`.github/workflows/ci.yml`) roda lint → typecheck → format → build → testes, com Postgres de verdade para os testes de integração. Cobrem: coleta em lote, pipeline completo (RAW→DONE), idempotência, Regra de Ouro anti-invenção da IA, auditoria de custo, sanitização anti-XSS e os formatos brasileiros.
+O CI (`.github/workflows/ci.yml`) roda lint → typecheck → format → build → testes, com Postgres de verdade para os testes de integração. Além disso, roda `pnpm audit --audit-level high` (informativo na primeira semana, depois bloqueante), checagem de drift de migrations (`prisma migrate diff`) e aplicação de migrations em banco limpo.
 
 ---
 
-## 🚀 Deploy
+## 🚀 Deploy (produção)
 
-### Checklist
+⚠️ **O deploy de produção não está pronto para uso imediato.** O `docker-compose.prod.yml` existe mas apresenta falhas conhecidas (ver auditoria `docs/audits/2026-10-28-produto-e-tecnica.md` §3.2 e §3.3):
+
+1. O frontend compilado aponta para `http://localhost:3001` (endereço da máquina do usuário), não para o domínio real.
+2. O nginx remove o prefixo `/api` que a API espera, resultando em 404 em todas as rotas.
+3. O container da API não roda `prisma migrate deploy` no boot, então instalações novas sobem contra banco vazio.
+
+### Checklist mínimo para tentar deploy (por sua conta e risco)
 
 - `SETTINGS_ENCRYPTION_KEY` forte e guardada em cofre (`node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`)
-- `CORS_ORIGINS` com o domínio real (nunca vazio em produção)
+- `CORS_ORIGINS` com o domínio real (obrigatório: a API falha o boot sem ele em produção)
+- `TRUST_PROXY` com o número de proxies à frente da API (`1` para um nginx)
+- `APP_PUBLIC_URL` (opcional) para os links enviados pelo Telegram apontarem para o domínio real
 - `NODE_ENV=production`, HTTPS via reverse proxy
 - Backup do volume do Postgres
 
-### Docker (produção)
-
 ```bash
 cp .env.example .env   # preencha: chave, CORS, senhas
-docker compose -f docker-compose.prod.yml up --build -d
+# ⚠️ docker compose -f docker-compose.prod.yml up --build -d  # não funciona de ponta a ponta hoje
 ```
 
 ---
@@ -398,15 +411,21 @@ PDFs com estrutura moderna agora passam pelo segundo extrator. Se falhar: export
 
 Digite no formato brasileiro (`20.000`, não `20,000` e sem `R$`). A tela mostra com milhar para conferir.
 
-### Edição de experiência/certificado não salvava
-
-Corrigido: datas vazias não derrubam mais o save. Se ver erro ao salvar, abra uma issue com o texto do toast.
-
 ### Reset total (apaga TUDO)
 
 ```bash
 ./dev-up.sh --reset   # último recurso: banco zerado
 ```
+
+---
+
+## 📄 Limitações conhecidas
+
+1. **Single-user:** uma única conta por instalação. Não há isolamento de dados entre usuários.
+2. **ATS heurístico:** o verificador de ATS pode dar falso positivo. Não confie cegamente no score.
+3. **Coleta dependente de fontes:** algumas fontes exigem credencial ou podem bloquear por anti-robô.
+4. **Deploy Docker:** não funciona de ponta a ponta hoje. Use `./dev-up.sh` para desenvolvimento local.
+5. **Sem backup automático:** não existe `pnpm db:backup`. Faça backup manual do volume do Postgres.
 
 ---
 
@@ -427,6 +446,7 @@ Guia completo em [`CONTRIBUTING.md`](./CONTRIBUTING.md): como reportar bug, suge
 - **Bugs e ideias:** [Issues](../../issues/new/choose) (templates de bug e feature)
 - **Dúvidas de uso:** este README + seção Troubleshooting acima
 - **Docs técnicas:** `CONTEXT.md`, `docs/adr/`, `AGENTS.md` (para agentes de IA)
+- **Melhorias planejadas:** `IMPROVEMENTS.md` (estado honesto, com tickets vinculados)
 - **Segurança:** [`SECURITY.md`](./SECURITY.md) (canal privado)
 
 ---

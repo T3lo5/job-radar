@@ -30,6 +30,7 @@ const AI_RUN_TYPES = [
   'MATCH_EXPLAIN',
   'JOB_ANALYZE',
   'CV_OPTIMIZE',
+  'COVER_LETTER',
   'SUMMARIZE',
   'OTHER',
 ] as const satisfies readonly AiRunType[];
@@ -43,6 +44,7 @@ export const AI_RUN_LABELS: Record<AiRunType, string> = {
   MATCH_EXPLAIN: 'Explicação de match',
   JOB_ANALYZE: 'Análise de vaga',
   CV_OPTIMIZE: 'Otimização de CV',
+  COVER_LETTER: 'Carta de apresentação',
   SUMMARIZE: 'Resumo',
   OTHER: 'Outra operação',
 };
@@ -58,16 +60,21 @@ function serializeRun<T extends { costUsd: unknown }>(run: T) {
   };
 }
 
+// Precisa espelhar os ids registrados em `sources/index.ts`. O drift aqui
+// fazia `wellfound` (registrado e listado em GET /api/admin/sources) responder
+// 404 no toggle, e mantinha `google-jobs` como fantasma sem adapter.
 const SOURCE_IDS = [
   'linkedin',
   'remoteok',
   'remotive',
-  'google-jobs',
   'indeed',
   'linkedin-apify',
   'adzuna',
   'jobicy',
   'weworkremotely',
+  'wellfound',
+  'hackernews',
+  'dribbble',
 ];
 
 const apifyTokenSchema = z.object({
@@ -179,7 +186,9 @@ export async function adminRoutes(app: FastifyInstance) {
   // DELETE /api/admin/apify-token — remove Apify token
   app.delete('/api/admin/apify-token', async (_request, reply) => {
     const cacheKey = `settings:${SETTINGS_SCOPE.APIFY}:${APIFY_SETTINGS.TOKEN}`;
-    await prisma.setting.delete({ where: { key: cacheKey } }).catch(() => {});
+    await prisma.setting
+      .delete({ where: { key: cacheKey } })
+      .catch((err) => app.log.warn({ err }, 'erro ao deletar setting de cache'));
     return reply.status(200).send({ ok: true });
   });
 
@@ -225,8 +234,12 @@ export async function adminRoutes(app: FastifyInstance) {
   app.delete('/api/admin/adzuna-credentials', async (_request, reply) => {
     const appIdKey = `settings:${SETTINGS_SCOPE.ADZUNA}:${ADZUNA_SETTINGS.APP_ID}`;
     const appKeyKey = `settings:${SETTINGS_SCOPE.ADZUNA}:${ADZUNA_SETTINGS.APP_KEY}`;
-    await prisma.setting.delete({ where: { key: appIdKey } }).catch(() => {});
-    await prisma.setting.delete({ where: { key: appKeyKey } }).catch(() => {});
+    await prisma.setting
+      .delete({ where: { key: appIdKey } })
+      .catch((err) => app.log.warn({ err }, 'erro ao deletar setting de cache'));
+    await prisma.setting
+      .delete({ where: { key: appKeyKey } })
+      .catch((err) => app.log.warn({ err }, 'erro ao deletar setting de cache'));
     return reply.status(200).send({ ok: true });
   });
 

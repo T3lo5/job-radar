@@ -42,16 +42,23 @@ function vaga(over: Partial<NormalizedJob> = {}): NormalizedJob {
 function depsCom(
   vagasPorFonte: Record<string, NormalizedJob[]>,
   extras: Partial<CollectionDeps> = {},
-): { deps: CollectionDeps; chamadas: Array<{ keywords: string[]; remoteOnly: boolean }> } {
+): {
+  deps: CollectionDeps;
+  chamadas: Array<{ keywords: string[]; remoteOnly: boolean }>;
+  opcoes: Array<{ enabledSourceIds?: ReadonlySet<string> }>;
+} {
   const chamadas: Array<{ keywords: string[]; remoteOnly: boolean }> = [];
+  const opcoes: Array<{ enabledSourceIds?: ReadonlySet<string> }> = [];
   const enfileirados: string[][] = [];
 
   return {
     chamadas,
+    opcoes,
     deps: {
       temFontes: () => Object.keys(vagasPorFonte).length > 0,
-      coletar: async (query) => {
+      coletar: async (query, options) => {
         chamadas.push({ keywords: query.keywords, remoteOnly: query.remoteOnly ?? false });
+        opcoes.push({ enabledSourceIds: options?.enabledSourceIds });
         return Object.entries(vagasPorFonte).map(([sourceId, jobs]) => ({ sourceId, jobs }));
       },
       enfileirar: async (ids) => {
@@ -115,6 +122,8 @@ async function limpar() {
   await prisma.job.deleteMany({ where: { company: MARCA } });
   await prisma.setting.deleteMany({ where: { key: { contains: MARCA } } });
   await prisma.setting.deleteMany({ where: { scope: 'sources', key: 'keyword.react' } });
+  // Flags de fonte usados pelos testes de desativação.
+  await prisma.setting.deleteMany({ where: { scope: 'sources', key: { startsWith: 'source_' } } });
   await prisma.jobSource.deleteMany({ where: { name: { contains: MARCA } } });
   await prisma.profile.deleteMany({ where: { user: { email: { contains: MARCA } } } });
   await prisma.user.deleteMany({ where: { email: { contains: MARCA } } });
@@ -163,8 +172,61 @@ describe('runCollection — grava o que a fonte devolveu', () => {
 
   it('sem fonte registrada, nao coleta e explica o motivo', async () => {
     const r = await runCollection({ ...depsCom({}).deps, temFontes: () => false });
-    expect(r).toEqual({ collected: 0, errors: ['No job sources registered'] });
+    expect(r).toEqual({
+      collected: 0,
+      errors: ['No job sources registered'],
+      executedSources: [],
+      skippedSources: [],
+    });
     expect(await prisma.job.count()).toBe(0);
+  });
+});
+
+describe('runCollection — fontes desativadas', () => {
+  it('não repassa fonte desativada ao coletor e lista no relatório', async () => {
+    await prisma.setting.create({
+      data: { scope: 'sources', key: 'source_remoteok_enabled', value: 'false' },
+    });
+    const { deps, opcoes } = depsCom({ [`${MARCA}f`]: [vaga()] });
+
+    const r = await runCollection(deps);
+
+    expect(opcoes.length).toBeGreaterThan(0);
+    for (const opcao of opcoes) {
+      expect(opcao.enabledSourceIds?.has('remoteok')).toBe(false);
+      // Reativar volta a coletar sem restart: o resto do registry continua lá.
+      expect(opcao.enabledSourceIds?.has('remotive')).toBe(true);
+    }
+    expect(r.skippedSources).toContain('remoteok');
+    expect(r.executedSources).not.toContain('remoteok');
+    expect(r.executedSources).toContain('remotive');
+  });
+
+  it('setting ausente mantém a fonte habilitada', async () => {
+    const { deps } = depsCom({ [`${MARCA}f`]: [vaga()] });
+
+    const r = await runCollection(deps);
+
+    expect(r.skippedSources).toEqual([]);
+    expect(r.executedSources).toContain('remoteok');
+    expect(r.executedSources).toContain('linkedin');
+  });
+
+  it('todas desativadas: não chama nenhuma fonte e explica no relatório', async () => {
+    const { getAllSources } = await import('../sources/index.js');
+    for (const source of getAllSources()) {
+      await prisma.setting.create({
+        data: { scope: 'sources', key: `source_${source.id}_enabled`, value: 'false' },
+      });
+    }
+
+    const { deps, chamadas } = depsCom({ [`${MARCA}f`]: [vaga()] });
+    const r = await runCollection(deps);
+
+    expect(chamadas).toEqual([]);
+    expect(r.collected).toBe(0);
+    expect(r.executedSources).toEqual([]);
+    expect(r.skippedSources).toHaveLength(getAllSources().length);
   });
 });
 
@@ -293,6 +355,47 @@ describe('runCollection — falhas', () => {
     const r = await runCollection(deps);
 
     expect(await prisma.job.count({ where: { company: MARCA } })).toBe(1);
+    expect(r.collected).toBe(1);
+  });
+});
+
+describe('runCollection — circuit breaker por coleta', () => {
+  it('não repete a fonte que já errou nas camadas seguintes', async () => {
+    // Perfil gera 2 camadas (keyword 'react' + fallback). Usamos ids de fontes
+    // REAIS (remoteok/remotive) porque é sobre o `enabledSourceIds` derivado
+    // dos settings que o breaker atua. A fonte `remoteok` só pode aparecer no
+    // erro UMA vez: depois de falhar, sai das camadas seguintes — em vez de
+    // repetir o 404 e martelar a fonte.
+    const chamadasPorFonte: Record<string, number> = {};
+    const vagaBoa = vaga({ url: 'https://fonte.test/boa-breaker' });
+
+    const deps: CollectionDeps = {
+      temFontes: () => true,
+      coletar: async (_query, options) => {
+        const ativas = options?.enabledSourceIds;
+        const resultados: Array<{ sourceId: string; jobs: NormalizedJob[]; error?: string }> = [];
+        if (!ativas || ativas.has('remoteok')) {
+          chamadasPorFonte['remoteok'] = (chamadasPorFonte['remoteok'] ?? 0) + 1;
+          resultados.push({ sourceId: 'remoteok', jobs: [], error: 'RemoteOK API error: 404' });
+        }
+        if (!ativas || ativas.has('remotive')) {
+          chamadasPorFonte['remotive'] = (chamadasPorFonte['remotive'] ?? 0) + 1;
+          resultados.push({ sourceId: 'remotive', jobs: [vagaBoa] });
+        }
+        return resultados;
+      },
+      enfileirar: async () => {},
+    };
+
+    const r = await runCollection(deps);
+
+    // A fonte boa é chamada em toda camada; a que falhou, só na primeira.
+    expect(chamadasPorFonte['remotive']).toBeGreaterThan(1);
+    expect(chamadasPorFonte['remoteok']).toBe(1);
+    // O erro aparece exatamente uma vez, não uma por camada.
+    const ocorrencias = r.errors.filter((e) => e.includes('404')).length;
+    expect(ocorrencias).toBe(1);
+    // A vaga da fonte boa entra.
     expect(r.collected).toBe(1);
   });
 });

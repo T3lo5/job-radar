@@ -11,14 +11,18 @@ export class MatchingStep implements ProcessingStep {
 
     if (!job) return;
 
-    const profile = await ctx.prisma.profile.findFirst({
+    const profiles = (await ctx.prisma.profile.findMany({
       include: {
         skills: { include: { skill: true } },
         languages: true,
       },
-    });
+    })) as Array<{
+      id: string;
+      skills: Array<{ skill: { name: string } }>;
+      languages: unknown;
+    }>;
 
-    if (!profile) {
+    if (profiles.length === 0) {
       await ctx.prisma.job.update({
         where: { id: ctx.jobId },
         data: { status: 'DONE' },
@@ -26,26 +30,24 @@ export class MatchingStep implements ProcessingStep {
       return;
     }
 
-    // Sem `skill.findMany({})`: o motor deriva sozinho o conjunto de skills que
-    // pode gerar match sinônimo (union das da vaga e das do perfil). Ler o
-    // catálogo inteiro aqui era uma query por vaga na fila, para varrer linhas
-    // que o motor descartaria uma a uma.
-    const result = deps.computeMatchScore(job, profile);
+    for (const profile of profiles) {
+      const result = deps.computeMatchScore(job, profile);
 
-    await ctx.prisma.jobMatch.upsert({
-      where: { jobId_profileId: { jobId: ctx.jobId, profileId: profile.id } },
-      update: {
-        score: result.score,
-        breakdown: result.breakdown as any,
-        computedAt: new Date(),
-      },
-      create: {
-        jobId: ctx.jobId,
-        profileId: profile.id,
-        score: result.score,
-        breakdown: result.breakdown as any,
-      },
-    });
+      await ctx.prisma.jobMatch.upsert({
+        where: { jobId_profileId: { jobId: ctx.jobId, profileId: profile.id } },
+        update: {
+          score: result.score,
+          breakdown: result.breakdown,
+          computedAt: new Date(),
+        },
+        create: {
+          jobId: ctx.jobId,
+          profileId: profile.id,
+          score: result.score,
+          breakdown: result.breakdown,
+        },
+      });
+    }
 
     await this.updateStatus(ctx, 'MATCHING', 'ANALYZING');
     await deps.enqueueNext(ctx.jobId, 'analyze');
@@ -54,7 +56,7 @@ export class MatchingStep implements ProcessingStep {
   private async updateStatus(ctx: ProcessingContext, from: string, to: string): Promise<void> {
     await ctx.prisma.job.update({
       where: { id: ctx.jobId },
-      data: { status: to as any },
+      data: { status: to },
     });
     await ctx.prisma.jobProcessingLog.create({
       data: { jobId: ctx.jobId, fromStatus: from, toStatus: to },

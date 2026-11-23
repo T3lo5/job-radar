@@ -15,6 +15,7 @@ const prisma = new PrismaClient({ log: ['error'] });
 const MARCA = '__analytics__';
 
 let sourceId: string;
+let profileId: string;
 const skillIds: Record<string, string> = {};
 
 async function semear() {
@@ -24,6 +25,7 @@ async function semear() {
   const profile = await prisma.profile.create({
     data: { userId: user.id, title: 'Eng', seniority: 'SENIOR' },
   });
+  profileId = profile.id;
   const source = await prisma.jobSource.create({
     data: { name: `${MARCA}src`, type: 'api', enabled: true },
   });
@@ -77,6 +79,54 @@ async function criarVagas(
   }
 }
 
+/** Cria uma candidatura da coorte, com eventos opcionais. */
+let appSeq = 0;
+type StatusCandidatura =
+  | 'FOUND'
+  | 'INTERESTING'
+  | 'CV_PREPARED'
+  | 'APPLIED'
+  | 'INTERVIEW'
+  | 'REJECTED'
+  | 'OFFER'
+  | 'ARCHIVED';
+
+async function criarCandidatura(opts: {
+  status: StatusCandidatura;
+  diasAtras?: number;
+  eventos?: StatusCandidatura[];
+}) {
+  const id = `${appSeq++}`;
+  const job = await prisma.job.create({
+    data: {
+      title: `Cand ${id}`,
+      company: 'C',
+      description: 'd',
+      url: `https://a.test/${MARCA}cand-${id}`,
+      hash: `${MARCA}cand-${id}`,
+      sourceId,
+      collectedAt: new Date(),
+    },
+  });
+  const application = await prisma.application.create({
+    data: {
+      jobId: job.id,
+      profileId,
+      status: opts.status,
+      notes: `${MARCA}cand-${id}`,
+      createdAt: new Date(Date.now() - (opts.diasAtras ?? 0) * 86400000),
+    },
+  });
+
+  for (const toStatus of opts.eventos ?? []) {
+    await prisma.applicationEvent.create({
+      data: { applicationId: application.id, fromStatus: null, toStatus },
+    });
+  }
+
+  return application;
+}
+
 async function limpar() {
   await prisma.job.deleteMany({ where: { url: { contains: MARCA } } });
   await prisma.application.deleteMany({ where: { notes: { contains: MARCA } } });
@@ -86,7 +136,6 @@ async function limpar() {
   await prisma.user.deleteMany({ where: { email: { contains: MARCA } } });
   await prisma.skill.deleteMany({ where: { name: { contains: MARCA } } });
 }
-
 beforeAll(async () => {
   await prisma.$connect();
   await limpar();
@@ -133,7 +182,92 @@ describe('getAnalyticsOverview — contagens', () => {
     expect(r.jobs.collected).toBe(0);
     expect(r.applications.total).toBe(0);
     expect(r.matches.averageScore).toBe(0);
-    expect(r.rates.responseRate).toBe(0);
+    // Denominador zero não é 0%: é "sem dado" (a UI mostra "—").
+    expect(r.rates.responseRate).toBeNull();
+    expect(r.rates.interviewRate).toBeNull();
+    expect(r.rates.offerRate).toBeNull();
+  });
+});
+
+describe('getAnalyticsOverview — coorte por ApplicationEvent', () => {
+  /**
+   * 10 candidaturas na janela:
+   * - 2 com histórico INTERVIEW (uma também OFFER);
+   * - 1 com histórico REJECTED;
+   * - 2 APPLIED sem histórico;
+   * - 3 FOUND (nem aplicadas);
+   * - 1 INTERVIEW atual sem histórico (registro antigo);
+   * - 1 REJECTED atual sem histórico (registro antigo).
+   *
+   * Resposta = INTERVIEW/REJECTED/OFFER (histórico ou status atual) = 5.
+   * Entrevista = INTERVIEW/OFFER = 3. Oferta = OFFER = 1.
+   */
+  async function coorteDeDez() {
+    await criarCandidatura({ status: 'INTERVIEW', eventos: ['INTERVIEW'] });
+    await criarCandidatura({ status: 'OFFER', eventos: ['INTERVIEW', 'OFFER'] });
+    await criarCandidatura({ status: 'REJECTED', eventos: ['REJECTED'] });
+    await criarCandidatura({ status: 'APPLIED' });
+    await criarCandidatura({ status: 'APPLIED' });
+    await criarCandidatura({ status: 'FOUND' });
+    await criarCandidatura({ status: 'FOUND' });
+    await criarCandidatura({ status: 'FOUND' });
+    await criarCandidatura({ status: 'INTERVIEW' }); // legado, sem evento
+    await criarCandidatura({ status: 'REJECTED' }); // legado, sem evento
+  }
+
+  it('calcula as taxas sobre a coorte, não sobre o status atual', async () => {
+    await coorteDeDez();
+
+    const r = await getAnalyticsOverview(30);
+
+    expect(r.cohort).toEqual({ total: 10, responded: 5, interviewed: 3, offered: 1 });
+    expect(r.rates.responseRate).toBe(0.5);
+    expect(r.rates.interviewRate).toBe(0.3);
+    expect(r.rates.offerRate).toBe(0.1);
+  });
+
+  it('nunca produz taxa acima de 100%', async () => {
+    await coorteDeDez();
+    // Candidatura com transições repetidas: EXISTS conta uma vez só, então o
+    // numerador não infla.
+    await criarCandidatura({
+      status: 'OFFER',
+      eventos: ['INTERVIEW', 'REJECTED', 'INTERVIEW', 'OFFER', 'OFFER'],
+    });
+
+    const r = await getAnalyticsOverview(30);
+    for (const taxa of Object.values(r.rates)) {
+      expect(taxa).not.toBeNull();
+      expect(taxa as number).toBeLessThanOrEqual(1);
+      expect(taxa as number).toBeGreaterThanOrEqual(0);
+    }
+    expect(r.cohort.offered).toBe(2);
+  });
+
+  it('mover candidatura antiga para INTERVIEW não altera a coorte do período', async () => {
+    await criarCandidatura({ status: 'APPLIED' });
+    await criarCandidatura({ status: 'APPLIED' });
+    const antiga = await criarCandidatura({ status: 'APPLIED', diasAtras: 40 });
+
+    const antes = await getAnalyticsOverview(30);
+    expect(antes.cohort.total).toBe(2);
+    expect(antes.rates.responseRate).toBe(0);
+
+    await prisma.application.update({ where: { id: antiga.id }, data: { status: 'INTERVIEW' } });
+
+    const depois = await getAnalyticsOverview(30);
+    expect(depois.cohort.total).toBe(2);
+    expect(depois.rates.responseRate).toBe(0);
+    expect(depois.rates.interviewRate).toBe(0);
+  });
+
+  it('candidatura fora da janela não entra no denominador', async () => {
+    await criarCandidatura({ status: 'APPLIED', diasAtras: 100 });
+    await criarCandidatura({ status: 'OFFER', diasAtras: 100 });
+
+    const r = await getAnalyticsOverview(30);
+    expect(r.cohort.total).toBe(0);
+    expect(r.rates.offerRate).toBeNull();
   });
 });
 

@@ -5,6 +5,7 @@ export const SETTINGS_SCOPE = {
   SOURCES: 'sources',
   APIFY: 'apify',
   ADZUNA: 'adzuna',
+  APP: 'app',
 } as const;
 
 export const APIFY_SETTINGS = {
@@ -32,6 +33,13 @@ export const AI_SETTINGS = {
 export const TELEGRAM_SETTINGS = {
   BOT_TOKEN: 'botToken',
   CHAT_ID: 'chatId',
+} as const;
+
+export const APP_SETTINGS = {
+  /** URL pública do dashboard, usada nos links enviados por Telegram. */
+  PUBLIC_URL: 'publicUrl',
+  /** Cadência padrão (em dias) para reagendar follow-up após registrar contato. */
+  FOLLOW_UP_CADENCE_DAYS: 'followUpCadenceDays',
 } as const;
 
 export const CRON_SETTINGS = {

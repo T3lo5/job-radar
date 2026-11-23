@@ -1,4 +1,5 @@
 import { prisma } from '../db/prisma.js';
+import { encrypt, decrypt } from './settings-service.js';
 
 export interface AiProviderInput {
   name: string;
@@ -16,6 +17,7 @@ export interface AiProviderOutput {
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
+  hasApiKey: boolean;
 }
 
 function toOutput(provider: {
@@ -26,6 +28,7 @@ function toOutput(provider: {
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
+  encryptedApiKey: string | null;
 }): AiProviderOutput {
   return {
     id: provider.id,
@@ -35,12 +38,55 @@ function toOutput(provider: {
     isActive: provider.isActive,
     createdAt: provider.createdAt,
     updatedAt: provider.updatedAt,
+    hasApiKey: !!provider.encryptedApiKey,
   };
+}
+
+/** Devolve a apiKey decifrada (uso interno apenas — nunca expor na API). */
+async function getDecryptedApiKey(id: string): Promise<string | null> {
+  const provider = await prisma.aiProvider.findUnique({
+    where: { id },
+    select: { id: true, encryptedApiKey: true, apiKeyIv: true, apiKeyTag: true, apiKey: true },
+  });
+
+  if (!provider) return null;
+
+  // Migração lazy: linhas antigas ainda têm `apiKey` em texto claro.
+  // Criptografa e limpa a coluna antiga no primeiro acesso.
+  if (provider.apiKey && !provider.encryptedApiKey) {
+    const { encryptedValue, iv, tag } = encrypt(provider.apiKey);
+    await prisma.aiProvider.update({
+      where: { id },
+      data: {
+        encryptedApiKey: encryptedValue,
+        apiKeyIv: iv,
+        apiKeyTag: tag,
+        apiKey: null,
+      },
+    });
+    return provider.apiKey;
+  }
+
+  if (!provider.encryptedApiKey || !provider.apiKeyIv || !provider.apiKeyTag) {
+    return null;
+  }
+
+  return decrypt(provider.encryptedApiKey, provider.apiKeyIv, provider.apiKeyTag);
 }
 
 export async function listAiProviders(): Promise<AiProviderOutput[]> {
   const providers = await prisma.aiProvider.findMany({
     orderBy: { createdAt: 'asc' },
+    select: {
+      id: true,
+      name: true,
+      baseUrl: true,
+      model: true,
+      isActive: true,
+      createdAt: true,
+      updatedAt: true,
+      encryptedApiKey: true,
+    },
   });
   return providers.map(toOutput);
 }
@@ -48,6 +94,16 @@ export async function listAiProviders(): Promise<AiProviderOutput[]> {
 export async function getActiveAiProvider(): Promise<AiProviderOutput | null> {
   const provider = await prisma.aiProvider.findFirst({
     where: { isActive: true },
+    select: {
+      id: true,
+      name: true,
+      baseUrl: true,
+      model: true,
+      isActive: true,
+      createdAt: true,
+      updatedAt: true,
+      encryptedApiKey: true,
+    },
   });
   return provider ? toOutput(provider) : null;
 }
@@ -60,13 +116,27 @@ export async function createAiProvider(data: AiProviderInput): Promise<AiProvide
     });
   }
 
+  const { encryptedValue, iv, tag } = encrypt(data.apiKey);
+
   const provider = await prisma.aiProvider.create({
     data: {
       name: data.name,
       baseUrl: data.baseUrl,
-      apiKey: data.apiKey,
+      encryptedApiKey: encryptedValue,
+      apiKeyIv: iv,
+      apiKeyTag: tag,
       model: data.model,
       isActive: data.isActive ?? false,
+    },
+    select: {
+      id: true,
+      name: true,
+      baseUrl: true,
+      model: true,
+      isActive: true,
+      createdAt: true,
+      updatedAt: true,
+      encryptedApiKey: true,
     },
   });
 
@@ -84,14 +154,30 @@ export async function updateAiProvider(
     });
   }
 
+  const updateData: Record<string, unknown> = {};
+  if (data.name !== undefined) updateData.name = data.name;
+  if (data.baseUrl !== undefined) updateData.baseUrl = data.baseUrl;
+  if (data.model !== undefined) updateData.model = data.model;
+  if (data.isActive !== undefined) updateData.isActive = data.isActive;
+  if (data.apiKey !== undefined) {
+    const { encryptedValue, iv, tag } = encrypt(data.apiKey);
+    updateData.encryptedApiKey = encryptedValue;
+    updateData.apiKeyIv = iv;
+    updateData.apiKeyTag = tag;
+  }
+
   const provider = await prisma.aiProvider.update({
     where: { id },
-    data: {
-      ...(data.name !== undefined && { name: data.name }),
-      ...(data.baseUrl !== undefined && { baseUrl: data.baseUrl }),
-      ...(data.apiKey !== undefined && { apiKey: data.apiKey }),
-      ...(data.model !== undefined && { model: data.model }),
-      ...(data.isActive !== undefined && { isActive: data.isActive }),
+    data: updateData,
+    select: {
+      id: true,
+      name: true,
+      baseUrl: true,
+      model: true,
+      isActive: true,
+      createdAt: true,
+      updatedAt: true,
+      encryptedApiKey: true,
     },
   });
 
@@ -111,7 +197,19 @@ export async function setActiveAiProvider(id: string): Promise<AiProviderOutput>
   const provider = await prisma.aiProvider.update({
     where: { id },
     data: { isActive: true },
+    select: {
+      id: true,
+      name: true,
+      baseUrl: true,
+      model: true,
+      isActive: true,
+      createdAt: true,
+      updatedAt: true,
+      encryptedApiKey: true,
+    },
   });
 
   return toOutput(provider);
 }
+
+export { getDecryptedApiKey };

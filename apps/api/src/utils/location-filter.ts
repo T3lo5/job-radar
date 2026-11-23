@@ -1,5 +1,39 @@
 import type { RemoteMode } from '@job-radar/shared';
 
+/**
+ * Normaliza uma localização para comparação: sem acento, minúsculo e com
+ * pontuação virando separador.
+ */
+function locationTokens(value: string): string[] {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+/**
+ * `candidate` aparece em `text` como localização?
+ *
+ * Códigos de país curtos ('br', 'us', 'uk') só casam como TOKEN inteiro. Era
+ * isso que fazia "Cambridge" e "Brisbane" passarem no filtro Brasil: ambos
+ * contêm 'br' como substring. Nomes mais longos continuam por substring para
+ * aceitar "São Paulo, SP" e "Espanha - Madri".
+ */
+function matchesLocation(text: string, candidate: string): boolean {
+  const candidateTokens = locationTokens(candidate);
+  if (candidateTokens.length === 0) return false;
+
+  const tokens = locationTokens(text);
+
+  if (candidateTokens.length === 1 && candidateTokens[0].length <= 3) {
+    return tokens.includes(candidateTokens[0]);
+  }
+
+  return tokens.join(' ').includes(candidateTokens.join(' '));
+}
+
 const BRAZILIAN_LOCATIONS = [
   'brasil',
   'brazil',
@@ -39,6 +73,22 @@ const BRAZILIAN_LOCATIONS = [
   'vitória',
   'cuiabá',
   'palmas',
+  // Siglas de estado mais usadas em anúncio ("Híbrido - SP"). A comparação é
+  // por token, então 'sp' não casa com "especialista"/"São Paulo" por acidente.
+  'sp',
+  'rj',
+  'mg',
+  'pr',
+  'sc',
+  'rs',
+  'ba',
+  'pe',
+  'ce',
+  'df',
+  'pb',
+  'rn',
+  'mt',
+  'ms',
 ];
 
 // Countries/locations that should be excluded by default for Brazil-focused searches
@@ -293,11 +343,16 @@ export function createLocationFilter(
 
   // Sem local preferido, ou quando o preferido é o Brasil: usa a lista
   // brasileira como fallback.
+  //
+  // Comparação por token, não por substring: `preferred.includes('br')` dava
+  // true para "Cambridge"/"Brisbane" e o usuário que mora lá recebia o filtro
+  // do Brasil.
+  const preferredTokens = locationTokens(preferred);
   const isBrazil =
     !preferred ||
-    preferred.includes('brasil') ||
-    preferred.includes('brazil') ||
-    preferred.includes('br');
+    preferredTokens.includes('brasil') ||
+    preferredTokens.includes('brazil') ||
+    preferredTokens.includes('br');
 
   if (isBrazil) {
     return build(BRAZILIAN_LOCATIONS, DEFAULT_EXCLUDED_LOCATIONS);
@@ -330,7 +385,7 @@ function isLocationAllowed(
   // quem busca vaga no Brasil, porque a modalidade remota pulava a lista.
   if (allowRemote && remote === 'remote') {
     const loc = location?.toLowerCase().trim() ?? '';
-    if (loc && excludeLocations.some((excluded) => loc.includes(excluded))) return false;
+    if (loc && excludeLocations.some((excluded) => matchesLocation(loc, excluded))) return false;
     return true;
   }
 
@@ -344,7 +399,7 @@ function isLocationAllowed(
 
       // Check if description mentions excluded locations
       for (const loc of excludeLocations) {
-        if (descLower.includes(loc)) return false;
+        if (matchesLocation(descLower, loc)) return false;
       }
       for (const city of EXCLUDED_CITIES) {
         if (descLower.includes(city)) return false;
@@ -352,7 +407,7 @@ function isLocationAllowed(
 
       // If description mentions included locations, allow it
       for (const loc of includeLocations) {
-        if (descLower.includes(loc)) return true;
+        if (matchesLocation(descLower, loc)) return true;
       }
     }
 
@@ -364,12 +419,12 @@ function isLocationAllowed(
 
   // Check if explicitly excluded
   for (const loc of excludeLocations) {
-    if (lower.includes(loc)) return false;
+    if (matchesLocation(lower, loc)) return false;
   }
 
   // Check if explicitly included
   for (const loc of includeLocations) {
-    if (lower.includes(loc)) return true;
+    if (matchesLocation(lower, loc)) return true;
   }
 
   // Check for excluded cities
@@ -381,13 +436,13 @@ function isLocationAllowed(
   if (description) {
     const descLower = description.toLowerCase();
     for (const loc of excludeLocations) {
-      if (descLower.includes(loc)) return false;
+      if (matchesLocation(descLower, loc)) return false;
     }
     for (const city of EXCLUDED_CITIES) {
       if (descLower.includes(city)) return false;
     }
     for (const loc of includeLocations) {
-      if (descLower.includes(loc)) return true;
+      if (matchesLocation(descLower, loc)) return true;
     }
   }
 

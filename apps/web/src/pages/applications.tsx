@@ -4,23 +4,31 @@ import {
   DndContext,
   DragOverlay,
   closestCorners,
+  KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
   type DragStartEvent,
   type DragEndEvent,
 } from '@dnd-kit/core';
-import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Plus, ExternalLink, Calendar, Bell } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Plus, ExternalLink, Calendar, Bell, Building, GripVertical } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ATS_PROVIDERS } from '@job-radar/shared';
 import { applicationsApi, jobsApi } from '../services/api';
 import { handleApiError } from '../services/error-handler';
 import { sanitizeHtml } from '../lib/sanitize';
 import { toast } from '../components/ui/toast';
+import { cn } from '../lib/utils/cn';
 import { ErrorBoundary } from '../components/error-boundary';
 import { EmptyState } from '../components/empty-state';
+import { ErrorState } from '../components/error-state';
 import { Skeleton } from '../components/ui/skeleton';
 import { Button } from '../components/ui/button';
 import {
@@ -41,6 +49,7 @@ import {
   SelectValue,
 } from '../components/ui/select';
 import { FileText } from 'lucide-react';
+import { MoveSelect } from '../components/move-select';
 
 interface ColumnConfig {
   id: string;
@@ -76,6 +85,7 @@ interface Application {
   notes: string | null;
   appliedAt: string | null;
   followUpAt: string | null;
+  atsUsed: string | null;
   job: {
     id: string;
     title: string;
@@ -117,6 +127,11 @@ export function ApplicationsPage() {
   const [selectedApplication, setSelectedApplication] = useState<Application | null>(null);
   const [descriptionDraft, setDescriptionDraft] = useState('');
   const [isEditingDescription, setIsEditingDescription] = useState(false);
+  // Anúncio para leitor de tela: arrastar não produz texto; mover pelo menu
+  // precisa de retorno audível.
+  const [anuncio, setAnuncio] = useState('');
+  // Aba ativa do Kanban em mobile (colunas viram abas em telas estreitas).
+  const [activeTab, setActiveTab] = useState<string | null>(null);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -141,7 +156,13 @@ export function ApplicationsPage() {
     onError: (error) => handleApiError(error, 'createJob'),
   });
 
-  const { data: applications, isLoading } = useQuery({
+  const {
+    data: applications,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
     queryKey: ['applications'],
     queryFn: () => applicationsApi.getList({ limit: 100 }),
   });
@@ -151,9 +172,9 @@ export function ApplicationsPage() {
       applicationsApi.updateStatus(id, status),
     onSuccess: (_, { status }) => {
       queryClient.invalidateQueries({ queryKey: ['applications'] });
-      toast.success(
-        `Status atualizado para "${COLUMNS.find((c) => c.id === status)?.title ?? status}"`,
-      );
+      const titulo = COLUMNS.find((c) => c.id === status)?.title ?? status;
+      toast.success(`Status atualizado para "${titulo}"`);
+      setAnuncio(`Candidatura movida para ${titulo}.`);
     },
     onError: (error) => handleApiError(error, 'updateStatus'),
   });
@@ -213,7 +234,11 @@ export function ApplicationsPage() {
     onError: (error) => handleApiError(error, 'updateFollowUp'),
   });
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    // Sem isto, teclado e leitor de tela não movem cards: só arrastar.
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
 
   // Listen for follow-up dialog open event from ApplicationCard.
   // Precisa ser useEffect: dentro de useState o inicializador roda uma vez e o
@@ -293,6 +318,16 @@ export function ApplicationsPage() {
   const content = () => {
     if (isLoading) return <ApplicationsLoading />;
 
+    if (isError) {
+      return (
+        <ErrorState
+          title="Não foi possível carregar as candidaturas"
+          error={error}
+          onRetry={() => void refetch()}
+        />
+      );
+    }
+
     if (totalApplications === 0) {
       return (
         <EmptyState
@@ -306,37 +341,92 @@ export function ApplicationsPage() {
     }
 
     return (
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCorners}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-      >
-        <div className="flex gap-4 overflow-x-auto pb-4">
-          {COLUMNS.map((column) => {
-            const columnApps = getApplicationsByStatus(column.id);
-            return (
-              <KanbanColumn
-                key={column.id}
-                id={column.id}
-                title={column.title}
-                color={column.color}
-                applications={columnApps}
-                onCardClick={handleCardClick}
-              />
-            );
-          })}
-        </div>
+      <div>
+        {window.innerWidth < 768 ? (
+          <div className="space-y-4">
+            <div className="flex flex-wrap gap-1 overflow-x-auto pb-2 scrollbar-hide">
+              {COLUMNS.map((column) => {
+                const columnApps = getApplicationsByStatus(column.id);
+                const isActive = activeTab === column.id;
+                return (
+                  <button
+                    key={column.id}
+                    onClick={() => setActiveTab(column.id)}
+                    className={cn(
+                      'whitespace-nowrap px-3 py-2 rounded-[var(--radius-sm)] text-sm font-medium transition-colors border',
+                      isActive
+                        ? 'bg-accent/10 text-accent border-accent'
+                        : 'text-muted-foreground border-transparent hover:bg-surface-2',
+                    )}
+                  >
+                    {column.title} ({columnApps.length})
+                  </button>
+                );
+              })}
+            </div>
+            {activeTab && (
+              <div className="rounded-[var(--radius-md)] border border-border bg-surface p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <h3 className="font-semibold text-foreground">
+                    {COLUMNS.find((c) => c.id === activeTab)?.title}
+                  </h3>
+                  <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs font-medium text-foreground">
+                    {getApplicationsByStatus(activeTab).length}
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {getApplicationsByStatus(activeTab).map((app) => (
+                    <ApplicationCard
+                      key={app.id}
+                      application={app}
+                      onClick={() => handleCardClick(app)}
+                      onMove={(status) => updateStatus.mutate({ id: app.id, status })}
+                    />
+                  ))}
+                  {getApplicationsByStatus(activeTab).length === 0 && (
+                    <p className="py-4 text-center text-sm text-muted-foreground">
+                      Nenhuma candidatura nesta fase.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCorners}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+          >
+            <div className="flex gap-4 overflow-x-auto pb-4">
+              {COLUMNS.map((column) => {
+                const columnApps = getApplicationsByStatus(column.id);
+                return (
+                  <KanbanColumn
+                    key={column.id}
+                    id={column.id}
+                    title={column.title}
+                    color={column.color}
+                    applications={columnApps}
+                    onCardClick={handleCardClick}
+                    onMove={(id, status) => updateStatus.mutate({ id, status })}
+                  />
+                );
+              })}
+            </div>
 
-        <DragOverlay>
-          {activeId ? (
-            <ApplicationCard
-              application={applicationsList.find((a) => a.id === activeId)!}
-              overlay
-            />
-          ) : null}
-        </DragOverlay>
-      </DndContext>
+            <DragOverlay>
+              {activeId ? (
+                <ApplicationCard
+                  application={applicationsList.find((a) => a.id === activeId)!}
+                  overlay
+                />
+              ) : null}
+            </DragOverlay>
+          </DndContext>
+        )}
+      </div>
     );
   };
 
@@ -344,7 +434,14 @@ export function ApplicationsPage() {
     <ErrorBoundary onRetry={() => window.location.reload()}>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-display font-bold">Candidaturas</h1>
+          <div>
+            <h1 className="text-3xl font-display font-bold">Candidaturas</h1>
+            <p className="text-sm text-muted-foreground">
+              {totalApplications} no quadro
+              {(applications?.pagination.total ?? 0) > totalApplications &&
+                ` · mostrando as ${totalApplications} primeiras de ${applications?.pagination.total}`}
+            </p>
+          </div>
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>
               <Button>
@@ -477,6 +574,12 @@ export function ApplicationsPage() {
                   <span className="rounded bg-surface-2 px-2 py-0.5 text-xs text-muted-foreground">
                     {selectedApplication.job.remote}
                   </span>
+                  {selectedApplication.atsUsed && (
+                    <span className="rounded bg-surface-2 px-2 py-0.5 text-xs text-muted-foreground flex items-center gap-1">
+                      <Building className="h-3 w-3" />
+                      ATS: {selectedApplication.atsUsed}
+                    </span>
+                  )}
                   {selectedApplication.appliedAt && (
                     <span className="rounded bg-surface-2 px-2 py-0.5 text-xs text-muted-foreground flex items-center gap-1">
                       <Calendar className="h-3 w-3" />
@@ -551,7 +654,36 @@ export function ApplicationsPage() {
                     </div>
                   </div>
                 )}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-muted-foreground">ATS usado</label>
+                  <Select
+                    value={selectedApplication.atsUsed ?? ''}
+                    onValueChange={(value: string) =>
+                      applicationsApi.update(selectedApplication.id, {
+                        atsUsed: value || null,
+                      })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o ATS..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Nenhum</SelectItem>
+                      {ATS_PROVIDERS.map((ats) => (
+                        <SelectItem key={ats} value={ats}>
+                          {ats}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
                 <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2">
+                  <Button variant="outline" asChild>
+                    <Link to={`/jobs/${selectedApplication.job.id}/kit`}>
+                      <FileText className="h-4 w-4 mr-1" />
+                      Abrir kit
+                    </Link>
+                  </Button>
                   <Button
                     variant="outline"
                     onClick={() => navigate(`/jobs/${selectedApplication.job.id}`)}
@@ -623,6 +755,10 @@ export function ApplicationsPage() {
           </DialogContent>
         </Dialog>
 
+        <p role="status" aria-live="polite" className="sr-only">
+          {anuncio}
+        </p>
+
         {content()}
       </div>
     </ErrorBoundary>
@@ -635,15 +771,18 @@ interface KanbanColumnProps {
   color: string;
   applications: Application[];
   onCardClick: (application: Application) => void;
+  onMove: (applicationId: string, status: string) => void;
 }
 
-function KanbanColumn({ id, title, color, applications, onCardClick }: KanbanColumnProps) {
+function KanbanColumn({ id, title, color, applications, onCardClick, onMove }: KanbanColumnProps) {
   const { setNodeRef } = useSortable({ id });
 
   return (
     <div
       ref={setNodeRef}
       className={`min-w-64 flex-1 rounded-[var(--radius-md)] border-2 p-3 ${color}`}
+      role="group"
+      aria-label={`Coluna ${title}, ${applications.length} candidaturas`}
     >
       <div className="mb-3 flex items-center justify-between">
         <h3 className="font-semibold text-foreground">{title}</h3>
@@ -658,10 +797,17 @@ function KanbanColumn({ id, title, color, applications, onCardClick }: KanbanCol
       >
         <div className="min-h-[200px] space-y-2">
           {applications.map((app) => (
-            <ApplicationCard key={app.id} application={app} onClick={() => onCardClick(app)} />
+            <ApplicationCard
+              key={app.id}
+              application={app}
+              onClick={() => onCardClick(app)}
+              onMove={(status) => onMove(app.id, status)}
+            />
           ))}
           {applications.length === 0 && (
-            <p className="py-4 text-center text-sm text-muted-foreground">Arraste cards aqui</p>
+            <p className="py-4 text-center text-sm text-muted-foreground">
+              Arraste um card aqui ou use “Mover para…” no card.
+            </p>
           )}
         </div>
       </SortableContext>
@@ -673,9 +819,10 @@ interface ApplicationCardProps {
   application: Application;
   overlay?: boolean;
   onClick?: () => void;
+  onMove?: (status: string) => void;
 }
 
-function ApplicationCard({ application, overlay, onClick }: ApplicationCardProps) {
+function ApplicationCard({ application, overlay, onClick, onMove }: ApplicationCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: application.id,
   });
@@ -696,16 +843,22 @@ function ApplicationCard({ application, overlay, onClick }: ApplicationCardProps
     <div
       ref={setNodeRef}
       style={style}
-      {...attributes}
-      {...listeners}
-      onClick={onClick}
-      className={`cursor-grab rounded border border-border bg-surface p-3 shadow-sm active:cursor-grabbing ${
+      className={`rounded border border-border bg-surface p-3 shadow-sm ${
         overlay ? 'ring-2 ring-accent shadow-lg' : ''
       } ${isDragging ? 'opacity-50' : ''} ${isFollowUpOverdue ? 'border-error' : isFollowUpSoon ? 'border-warning' : ''}`}
     >
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-2">
         <div className="flex-1">
-          <div className="font-medium text-sm text-foreground">{application.job.title}</div>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onClick?.();
+            }}
+            className="text-left text-sm font-medium text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded"
+          >
+            {application.job.title}
+          </button>
           <div className="text-xs text-muted-foreground">{application.job.company}</div>
           {application.job.location && (
             <div className="mt-1 text-xs text-muted-foreground">{application.job.location}</div>
@@ -725,20 +878,60 @@ function ApplicationCard({ application, overlay, onClick }: ApplicationCardProps
             </div>
           )}
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-          onClick={(e) => {
-            e.stopPropagation();
-            window.dispatchEvent(
-              new CustomEvent('open-followup', { detail: { id: application.id } }),
-            );
-          }}
-        >
-          <Bell className="h-3.5 w-3.5" />
-        </Button>
+
+        {!overlay && (
+          <div className="flex items-center gap-1">
+            {/* Alça dedicada: o card inteiro não é mais botão/arrastável, então
+                dá para ter controles interativos dentro dele. */}
+            <button
+              type="button"
+              {...attributes}
+              {...listeners}
+              aria-label={`Arrastar ${application.job.title}. Com o teclado, pressione Espaço e use as setas.`}
+              className="flex h-11 w-6 cursor-grab items-center justify-center rounded text-muted-foreground hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:cursor-grabbing"
+            >
+              <GripVertical className="h-4 w-4" />
+            </button>
+            <Button variant="ghost" size="icon" className="h-11 w-11 text-muted-foreground" asChild>
+              <Link
+                to={`/jobs/${application.job.id}/kit`}
+                aria-label={`Abrir kit da candidatura de ${application.job.title}`}
+                title="Abrir kit"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <FileText className="h-4 w-4" />
+              </Link>
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-11 w-11 text-muted-foreground"
+              aria-label={`Agendar follow-up de ${application.job.title}`}
+              title="Agendar follow-up"
+              onClick={(e) => {
+                e.stopPropagation();
+                window.dispatchEvent(
+                  new CustomEvent('open-followup', { detail: { id: application.id } }),
+                );
+              }}
+            >
+              <Bell className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
       </div>
+
+      {!overlay && onMove && (
+        <div className="mt-3">
+          <MoveSelect
+            applicationId={application.id}
+            applicationTitle={application.job.title}
+            current={application.status}
+            options={COLUMNS.map((column) => ({ id: column.id, title: column.title }))}
+            onMove={onMove}
+          />
+        </div>
+      )}
     </div>
   );
 }

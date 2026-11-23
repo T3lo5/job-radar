@@ -38,9 +38,9 @@ task
 
 ## Status
 
-partial
+complete
 
-## Resolution (Backend completo)
+## Resolution (Backend + Frontend completo)
 
 **Criptografia AES-256-GCM** (`apps/api/src/services/settings-service.ts`):
 - IV aleatório por valor (16 bytes)
@@ -68,11 +68,8 @@ partial
 
 **Migration:** `settings_encryption` (adicionou encrypted_value, iv, tag em settings + tabela setting_meta)
 
-**Pendente (Frontend):**
-- Páginas `/setup` (wizard) e `/settings`
-- Hook `useSettings()` com TanStack Query
-- Formulários react-hook-form + zod
-
-**Validação:**
-- `pnpm typecheck` ✓
-- Migration aplicada com sucesso
+**Frontend completo:**
+- Páginas `/setup` (wizard com react-hook-form + zod) e `/settings` (abas IA, Fontes, Cron, Conta)
+- Hook `useSettings()` com TanStack Query (`apps/web/src/hooks/useSettings.ts`)
+- Testes: `setup.test.tsx` e `settings.test.tsx`
+- `pnpm typecheck` ✓, `pnpm lint` ✓ (0 erros), `pnpm test` ✓ (103 passando)

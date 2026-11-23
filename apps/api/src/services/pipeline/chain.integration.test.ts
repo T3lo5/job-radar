@@ -243,8 +243,9 @@ describe('cadeia completa: extrair -> casar -> analisar', () => {
     await orq.run(jobId, 'analyze');
 
     const analysis = await prisma.jobAnalysis.findFirstOrThrow({ where: { jobId } });
-    // A análise vem da IA falsa (recomendacao Candidatar), não do fallback.
-    expect(analysis.recommendation).toBe('STRONG_APPLY');
+    // A análise vem da IA falsa (recomendacao Candidatar) com score 82:
+    // positiva, mas não "forte" (o corte de STRONG_APPLY é 85).
+    expect(analysis.recommendation).toBe('APPLY');
     expect(analysis.summary).toBe('Boa aderência técnica.');
     expect(analysis.strengths).toEqual(['React', 'TypeScript']);
     expect(analysis.gaps).toEqual(['Kubernetes']);
@@ -404,6 +405,38 @@ describe('cadeia completa — degradacao', () => {
       where: { jobId, toStatus: 'FAILED' },
     });
     expect(log?.message).toContain('boom no matching');
+    // O progresso fica registrado: o retry lê daqui para saber que a extração
+    // já tinha sido concluída.
+    expect(log?.fromStatus).toBe('MATCHING');
+
+    deps.computeMatchScore = original;
+  });
+
+  it('retry depois de FAILED reprocessa o matching e fecha a vaga', async () => {
+    const jobId = await novaVaga();
+    const orq = criarOrchestrator();
+    const deps = (orq as unknown as { deps: StepDependencies }).deps;
+    const original = deps.computeMatchScore;
+    let falhas = 0;
+
+    await orq.run(jobId, 'extract');
+
+    deps.computeMatchScore = (...args) => {
+      falhas++;
+      if (falhas === 1) throw new Error('boom transitório no matching');
+      return original(...args);
+    };
+
+    await expect(orq.run(jobId, 'match')).rejects.toThrow('boom transitório');
+    expect((await prisma.job.findUniqueOrThrow({ where: { id: jobId } })).status).toBe('FAILED');
+
+    // Mesmo step, como o BullMQ faria no retry.
+    await orq.run(jobId, 'match');
+    expect((await prisma.job.findUniqueOrThrow({ where: { id: jobId } })).status).toBe('ANALYZING');
+    expect(await prisma.jobMatch.count({ where: { jobId } })).toBe(1);
+
+    await orq.run(jobId, 'analyze');
+    expect((await prisma.job.findUniqueOrThrow({ where: { id: jobId } })).status).toBe('DONE');
 
     deps.computeMatchScore = original;
   });

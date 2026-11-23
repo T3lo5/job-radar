@@ -1,9 +1,10 @@
 import type { NormalizedJob, RemoteMode } from '@job-radar/shared';
-import createDOMPurify from 'isomorphic-dompurify';
-import { JSDOM } from 'jsdom';
+import DOMPurify from 'isomorphic-dompurify';
 
-const window = new JSDOM('').window;
-const DOMPurify = createDOMPurify(window);
+// O `jsdom` era importado direto aqui, mas nunca foi declarado em
+// `dependencies` — só funcionava porque `isomorphic-dompurify` o traz como
+// transitiva. O pacote já entrega um DOMPurify ligado ao jsdom (ou ao DOM do
+// browser), então a dependência implícita sai junto com o import.
 
 export const REMOTE_MODE_PATTERNS: Array<{ values: string[]; mode: RemoteMode }> = [
   {
@@ -247,11 +248,19 @@ export function normalizeJobFields(raw: {
   description: string;
   location: string | null;
   salary?: string;
+  /**
+   * Moeda declarada pela fonte, quando ela sabe (Adzuna Brasil é sempre BRL).
+   * Vence o símbolo do texto: `"8000-12000"` não tem símbolo nenhum e o parser
+   * assumia USD, gravando salário brasileiro como dólar.
+   */
+  currency?: string | null;
   url: string;
   externalId?: string;
   publishedAt?: Date | null;
   tags?: string[];
 }): NormalizedJob {
+  const salary = raw.salary ? parseSalary(raw.salary) : null;
+
   return {
     title: raw.title.trim(),
     company: raw.company.trim(),
@@ -260,12 +269,18 @@ export function normalizeJobFields(raw: {
     // Usa location + tags: fontes como RemoteOK marcam a modalidade em
     // `tags` e mandam `location` vazio.
     remote: parseRemoteMode(raw.location ?? '', raw.tags),
-    salaryMin: raw.salary ? parseSalary(raw.salary).min : null,
-    salaryMax: raw.salary ? parseSalary(raw.salary).max : null,
-    salaryCurrency: raw.salary ? parseSalary(raw.salary).currency : null,
+    salaryMin: salary?.min ?? null,
+    salaryMax: salary?.max ?? null,
+    salaryCurrency: salary ? (normalizeCurrency(raw.currency) ?? salary.currency) : null,
     url: raw.url,
     externalId: raw.externalId ?? raw.url,
     publishedAt: raw.publishedAt ?? null,
     tags: raw.tags ?? [],
   };
+}
+
+/** Aceita só código ISO de 3 letras; qualquer outra coisa cai no parser. */
+function normalizeCurrency(currency: string | null | undefined): string | null {
+  const code = currency?.trim().toUpperCase();
+  return code && /^[A-Z]{3}$/.test(code) ? code : null;
 }

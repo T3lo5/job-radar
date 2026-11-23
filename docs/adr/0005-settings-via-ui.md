@@ -40,8 +40,29 @@ O `.env` guarda apenas:
 - **Tela Settings** (`/settings`): sempre acessível, edita valores existentes sem wizard
 - Toda rota da API que precisa de config consulta via `SettingsService.get(scope)` que:
   - Mantém cache em memória (singleton no processo)
-  - Persiste no Redis (chave `settings:<scope>`, TTL 30s) para consistência multi-instance
+  - Persiste no Redis (chave `settings:v2:<scope>:<key>`, TTL 30s) para consistência multi-instance
+  - **Para valores sensíveis, o Redis guarda o ciphertext** (os mesmos `encryptedValue`/`iv`/`tag` do Postgres), nunca o valor decifrado; a decifragem acontece só em memória, no uso
   - Invalida Redis + memória ao salvar via UI
+
+## Nota complementar (2026-10-28, auditoria)
+
+A primeira versão do cache L2 gravava o valor já decifrado: `redis-cli GET
+'settings:telegram:botToken'` devolvia o token do bot em texto claro, e o mesmo
+valia para API keys de IA — anulando a criptografia em repouso do Postgres para
+quem tivesse acesso a backup, réplica ou ao Redis.
+
+Correção (ticket 23):
+
+- A chave do cache ganhou versão (`settings:v2:<scope>:<key>`). Formato antigo é
+  ignorado por construção.
+- Segredo é cacheado como `{ v: 2, encrypted: true, ciphertext, iv, tag }`; a
+  decisão vem de `Setting.encrypted`, não de quem chamou `set` — linha antiga
+  continua tratada como segredo.
+- `purgeLegacyCache()` roda no boot e apaga do Redis as chaves `settings:*` sem
+  a versão, removendo o plaintext que já tivesse sido gravado.
+- Salvar um setting apaga as duas formas da chave (versionada e legada).
+
+Ver `apps/api/src/services/settings-secrets.integration.test.ts`.
 
 ## Consequências
 

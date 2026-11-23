@@ -18,11 +18,12 @@ interface LinkedInGuestJob {
   location: string;
   link: string;
   listedAt: string;
+  description: string;
 }
 
 export async function fetchLinkedIn(query: SourceQuery): Promise<NormalizedJob[]> {
   const jobs: NormalizedJob[] = [];
-  const keywords = query.keywords.length > 0 ? query.keywords.join('%20') : 'developer';
+  const keywords = query.keywords.length > 0 ? query.keywords.join(' ') : 'developer';
   const location = query.remoteOnly ? 'remote' : 'Brazil';
   const maxResults = query.limit ?? 50;
   const pageSize = 25;
@@ -30,10 +31,16 @@ export async function fetchLinkedIn(query: SourceQuery): Promise<NormalizedJob[]
   let start = 0;
 
   while (jobs.length < maxResults) {
-    const url = `${LINKEDIN_GUEST_API}?keywords=${keywords}&location=${location}&start=${start}`;
+    // `URL` + `searchParams` codifica cada valor como um parâmetro inteiro. A
+    // versão anterior juntava com `join('%20')` e concatenava na string: um
+    // termo com `&` virava outro parâmetro e um acento ia cru na URL.
+    const url = new URL(LINKEDIN_GUEST_API);
+    url.searchParams.set('keywords', keywords);
+    url.searchParams.set('location', location);
+    url.searchParams.set('start', String(start));
 
     try {
-      const response = await fetchWithTimeout(url, {
+      const response = await fetchWithTimeout(url.toString(), {
         headers: {
           'User-Agent': getRandomUserAgent(),
           Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -64,10 +71,10 @@ export async function fetchLinkedIn(query: SourceQuery): Promise<NormalizedJob[]
           normalizeJobFields({
             title: raw.title,
             company: raw.company,
-            description: '',
+            description: raw.description || '',
             location: raw.location || null,
             url: raw.link,
-            externalId: raw.link.split('?')[0]?.split('-').pop() || String(Date.now()),
+            externalId: `linkedin-${hashString(raw.link)}`,
             publishedAt: raw.listedAt ? new Date(raw.listedAt) : null,
             tags: [],
           }),
@@ -120,6 +127,7 @@ function parseLinkedInGuestHtml(html: string): LinkedInGuestJob[] {
         location: locationMatch ? stripHtml(locationMatch[1]) : '',
         link: linkMatch?.[1] || 'https://www.linkedin.com/jobs',
         listedAt: timeMatch?.[1] || '',
+        description: '',
       });
     }
   }
@@ -146,4 +154,19 @@ function getRandomUserAgent(): string {
 function randomDelay(minMs: number, maxMs: number): Promise<void> {
   const delay = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
   return new Promise((resolve) => setTimeout(resolve, delay));
+}
+
+/**
+ * Hash simples e determinístico de uma string. Usado para gerar externalId
+ * estável no LinkedIn guest, onde o ID da vaga nem sempre está disponível na
+ * URL. Mesmo que a estrutura da URL mude, o hash continua previsível.
+ */
+function hashString(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash = hash & hash; // Converter para int32
+  }
+  return Math.abs(hash).toString(36);
 }

@@ -35,7 +35,15 @@ import {
 } from './workers/job-collection.js';
 import { createProcessingWorker, processingQueue } from './workers/processing.js';
 import { startTelegramBot, stopTelegramBot } from './services/telegram-bot.js';
+import { settingsService } from './services/settings-service.js';
 import { getEnv } from './config/env.js';
+import {
+  GLOBAL_RATE_LIMIT,
+  authRateLimitFor,
+  parseTrustProxy,
+  rateLimitErrorResponse,
+  resolveCorsOrigins,
+} from './config/http-security.js';
 
 const env = getEnv();
 
@@ -51,6 +59,9 @@ async function buildServer() {
     logger: {
       level: env.LOG_LEVEL,
     },
+    // Atrás do nginx, sem isto `request.ip` é sempre o IP do proxy e o rate
+    // limit vira um bucket único para todo mundo.
+    trustProxy: parseTrustProxy(env.TRUST_PROXY),
     genReqId: () => `req-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
   }).withTypeProvider<ZodTypeProvider>();
 
@@ -89,27 +100,44 @@ async function buildServer() {
 
   // CORS: antes era `origin: true`, que reflete qualquer origem. Como o login
   // usa cookie, a origem precisa ser explícita e credenciais habilitadas —
-  // browser não envia cookie para origem coringa.
-  const allowedOrigins = (process.env.CORS_ORIGINS ?? '')
-    .split(',')
-    .map((o) => o.trim())
-    .filter(Boolean);
-
+  // browser não envia cookie para origem coringa. Em produção, lista vazia
+  // falha o boot (`resolveCorsOrigins`); em dev, só localhost.
   await app.register(cors, {
-    origin: allowedOrigins.length > 0 ? allowedOrigins : true,
+    origin: resolveCorsOrigins(env.CORS_ORIGINS, env.NODE_ENV),
     credentials: true,
   });
 
+  // Limites por rota de auth: 20/min em `/api/auth/*` e 5/min em
+  // login/signup/setup (definido na própria rota; o plugin respeita o mais
+  // restritivo). Sem isto, brute force cabia no limite global de 100/min.
+  //
+  // Precisa ser registrado ANTES do @fastify/rate-limit: ele lê
+  // `route.config.rateLimit` em um `onRoute` próprio, e hooks `onRoute` rodam
+  // na ordem de registro — se o nosso viesse depois, a rota já teria sido
+  // capturada com o limite global.
+  app.addHook('onRoute', (route) => {
+    const rule = authRateLimitFor(route.url);
+    if (!rule) return;
+    route.config ??= {};
+    route.config.rateLimit ??= rule;
+  });
+
   await app.register(rateLimit, {
-    max: 100,
-    timeWindow: '1 minute',
+    ...GLOBAL_RATE_LIMIT,
     redis,
+    // IP real (respeitando `trustProxy`): cada cliente atrás do nginx tem o
+    // próprio bucket.
+    keyGenerator: (request) => request.ip,
+    errorResponseBuilder: (_request, context) => rateLimitErrorResponse(context),
   });
 
   await app.register(multipart, {
     limits: { fileSize: 10 * 1024 * 1024 },
   });
 
+  // Rotas de auth com limite próprio: 20/min em `/api/auth/*` e 5/min em
+  // login/signup/setup (definido na própria rota; o plugin respeita o mais
+  // restritivo). O `onRoute` está registrado acima, antes do plugin.
   await app.register(authRoutes);
   await app.register(profileRoutes);
   await app.register(settingsRoutes);
@@ -186,6 +214,17 @@ async function buildServer() {
 async function main() {
   const app = await buildServer();
 
+  // Ticket 23: o cache L2 antigo guardava valores decifrados. Limpa o plaintext
+  // das chaves legadas antes de qualquer leitura; falha aqui não impede o boot.
+  await settingsService
+    .purgeLegacyCache()
+    .then((removidas) => {
+      if (removidas > 0) {
+        app.log.info({ removidas }, 'cache legado de settings (texto claro) removido');
+      }
+    })
+    .catch((err) => app.log.warn({ err }, 'não foi possível limpar o cache legado de settings'));
+
   const worker = createJobCollectionWorker();
   const processingWorker = createProcessingWorker();
   await setupCronSchedule();
@@ -218,13 +257,19 @@ async function main() {
 
     // Ordem: para de aceitar trabalho, deixa o corrente terminar, e só então
     // fecha as conexões.
-    await app.close().catch(() => {});
-    await processingWorker.close().catch(() => {});
-    await worker.close().catch(() => {});
-    await processingQueue.close().catch(() => {});
-    await jobCollectionQueue.close().catch(() => {});
-    await stopTelegramBot().catch(() => {});
-    await prisma.$disconnect().catch(() => {});
+    await app.close().catch((err) => app.log.warn({ err }, 'erro ao fechar app'));
+    await processingWorker
+      .close()
+      .catch((err) => app.log.warn({ err }, 'erro ao fechar processingWorker'));
+    await worker.close().catch((err) => app.log.warn({ err }, 'erro ao fechar worker'));
+    await processingQueue
+      .close()
+      .catch((err) => app.log.warn({ err }, 'erro ao fechar processingQueue'));
+    await jobCollectionQueue
+      .close()
+      .catch((err) => app.log.warn({ err }, 'erro ao fechar jobCollectionQueue'));
+    await stopTelegramBot().catch((err) => app.log.warn({ err }, 'erro ao parar telegram bot'));
+    await prisma.$disconnect().catch((err) => app.log.warn({ err }, 'erro ao desconectar prisma'));
     redis.disconnect();
 
     app.log.info('encerrado com sucesso');

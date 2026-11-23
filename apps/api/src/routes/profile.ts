@@ -1,6 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { LANGUAGE_LEVEL_CODES } from '@job-radar/shared';
 import { prisma } from '../db/prisma.js';
+import {
+  getCurrentProfile,
+  getCurrentProfileWithRelations,
+  getCurrentUserId,
+} from '../lib/current-user.js';
 import { httpUrl, dataOpcional } from '../utils/validation.js';
 
 const skillLevelSchema = z.enum(['BEGINNER', 'INTERMEDIATE', 'ADVANCED', 'EXPERT']);
@@ -49,7 +55,7 @@ const educationSchema = z.object({
 
 const languageSchema = z.object({
   language: z.string().min(1).max(100),
-  level: z.enum(['BASIC', 'INTERMEDIATE', 'ADVANCED', 'FLUENT', 'NATIVE']),
+  level: z.enum(LANGUAGE_LEVEL_CODES),
 });
 
 const certificationSchema = z.object({
@@ -79,20 +85,8 @@ const workExperienceSchema = z.object({
 });
 
 export async function profileRoutes(app: FastifyInstance) {
-  app.get('/api/profile', async (_request, reply) => {
-    const profile = await prisma.profile.findFirst({
-      include: {
-        skills: {
-          include: { skill: true },
-          orderBy: { skill: { name: 'asc' } },
-        },
-        education: true,
-        certifications: true,
-        projects: true,
-        languages: true,
-        workExperiences: true,
-      },
-    });
+  app.get('/api/profile', async (request, reply) => {
+    const profile = await getCurrentProfileWithRelations(request);
 
     if (!profile) {
       return reply.status(404).send({ error: 'Profile not found' });
@@ -104,16 +98,12 @@ export async function profileRoutes(app: FastifyInstance) {
   app.put('/api/profile', { schema: { body: profileUpdateSchema } }, async (request, reply) => {
     const body = request.body as z.infer<typeof profileUpdateSchema>;
 
-    const existing = await prisma.profile.findFirst();
+    const existing = await getCurrentProfile(request);
     if (!existing) {
-      // Create profile if none exists
-      const user = await prisma.user.findFirst();
-      if (!user) {
-        return reply.status(400).send({ error: 'No user found. Please seed the database first.' });
-      }
+      // O perfil nasce no primeiro PUT, sempre ligado ao usuário da sessão.
       const created = await prisma.profile.create({
         data: {
-          userId: user.id,
+          userId: getCurrentUserId(request),
           ...body,
           seniorityList: body.seniorityList ?? [],
           jobTypes: body.jobTypes ?? [],
@@ -157,7 +147,7 @@ export async function profileRoutes(app: FastifyInstance) {
   app.post('/api/profile/skills', { schema: { body: addSkillSchema } }, async (request, reply) => {
     const { skillName, level, yearsExp } = request.body as z.infer<typeof addSkillSchema>;
 
-    const profile = await prisma.profile.findFirst();
+    const profile = await getCurrentProfile(request);
     if (!profile) {
       return reply.status(404).send({ error: 'Profile not found' });
     }
@@ -200,8 +190,13 @@ export async function profileRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const { id } = request.params as z.infer<typeof cuidSchema>;
 
-      const profileSkill = await prisma.profileSkill.findUnique({
-        where: { id },
+      const profile = await getCurrentProfile(request);
+      if (!profile) {
+        return reply.status(404).send({ error: 'Profile not found' });
+      }
+
+      const profileSkill = await prisma.profileSkill.findFirst({
+        where: { id, profileId: profile.id },
       });
 
       if (!profileSkill) {
@@ -217,7 +212,7 @@ export async function profileRoutes(app: FastifyInstance) {
     '/api/profile/preferences',
     { schema: { body: preferencesSchema } },
     async (request, reply) => {
-      const existing = await prisma.profile.findFirst();
+      const existing = await getCurrentProfile(request);
       if (!existing) {
         return reply.status(404).send({ error: 'Profile not found' });
       }
@@ -245,7 +240,7 @@ export async function profileRoutes(app: FastifyInstance) {
     '/api/profile/education',
     { schema: { body: educationSchema } },
     async (request, reply) => {
-      const profile = await prisma.profile.findFirst();
+      const profile = await getCurrentProfile(request);
       if (!profile) {
         return reply.status(404).send({ error: 'Profile not found' });
       }
@@ -269,7 +264,11 @@ export async function profileRoutes(app: FastifyInstance) {
       const { id } = request.params as z.infer<typeof cuidSchema>;
       const data = request.body as z.infer<typeof educationSchema>;
 
-      const existing = await prisma.education.findUnique({ where: { id } });
+      const profile = await getCurrentProfile(request);
+      if (!profile) {
+        return reply.status(404).send({ error: 'Profile not found' });
+      }
+      const existing = await prisma.education.findFirst({ where: { id, profileId: profile.id } });
       if (!existing) {
         return reply.status(404).send({ error: 'Education not found' });
       }
@@ -289,7 +288,11 @@ export async function profileRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const { id } = request.params as z.infer<typeof cuidSchema>;
 
-      const existing = await prisma.education.findUnique({ where: { id } });
+      const profile = await getCurrentProfile(request);
+      if (!profile) {
+        return reply.status(404).send({ error: 'Profile not found' });
+      }
+      const existing = await prisma.education.findFirst({ where: { id, profileId: profile.id } });
       if (!existing) {
         return reply.status(404).send({ error: 'Education not found' });
       }
@@ -304,7 +307,7 @@ export async function profileRoutes(app: FastifyInstance) {
     '/api/profile/languages',
     { schema: { body: languageSchema } },
     async (request, reply) => {
-      const profile = await prisma.profile.findFirst();
+      const profile = await getCurrentProfile(request);
       if (!profile) {
         return reply.status(404).send({ error: 'Profile not found' });
       }
@@ -328,7 +331,13 @@ export async function profileRoutes(app: FastifyInstance) {
       const { id } = request.params as z.infer<typeof cuidSchema>;
       const data = request.body as z.infer<typeof languageSchema>;
 
-      const existing = await prisma.profileLanguage.findUnique({ where: { id } });
+      const profile = await getCurrentProfile(request);
+      if (!profile) {
+        return reply.status(404).send({ error: 'Profile not found' });
+      }
+      const existing = await prisma.profileLanguage.findFirst({
+        where: { id, profileId: profile.id },
+      });
       if (!existing) {
         return reply.status(404).send({ error: 'Language not found' });
       }
@@ -348,7 +357,13 @@ export async function profileRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const { id } = request.params as z.infer<typeof cuidSchema>;
 
-      const existing = await prisma.profileLanguage.findUnique({ where: { id } });
+      const profile = await getCurrentProfile(request);
+      if (!profile) {
+        return reply.status(404).send({ error: 'Profile not found' });
+      }
+      const existing = await prisma.profileLanguage.findFirst({
+        where: { id, profileId: profile.id },
+      });
       if (!existing) {
         return reply.status(404).send({ error: 'Language not found' });
       }
@@ -363,7 +378,7 @@ export async function profileRoutes(app: FastifyInstance) {
     '/api/profile/certifications',
     { schema: { body: certificationSchema } },
     async (request, reply) => {
-      const profile = await prisma.profile.findFirst();
+      const profile = await getCurrentProfile(request);
       if (!profile) {
         return reply.status(404).send({ error: 'Profile not found' });
       }
@@ -387,7 +402,13 @@ export async function profileRoutes(app: FastifyInstance) {
       const { id } = request.params as z.infer<typeof cuidSchema>;
       const data = request.body as z.infer<typeof certificationSchema>;
 
-      const existing = await prisma.certification.findUnique({ where: { id } });
+      const profile = await getCurrentProfile(request);
+      if (!profile) {
+        return reply.status(404).send({ error: 'Profile not found' });
+      }
+      const existing = await prisma.certification.findFirst({
+        where: { id, profileId: profile.id },
+      });
       if (!existing) {
         return reply.status(404).send({ error: 'Certification not found' });
       }
@@ -407,7 +428,13 @@ export async function profileRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const { id } = request.params as z.infer<typeof cuidSchema>;
 
-      const existing = await prisma.certification.findUnique({ where: { id } });
+      const profile = await getCurrentProfile(request);
+      if (!profile) {
+        return reply.status(404).send({ error: 'Profile not found' });
+      }
+      const existing = await prisma.certification.findFirst({
+        where: { id, profileId: profile.id },
+      });
       if (!existing) {
         return reply.status(404).send({ error: 'Certification not found' });
       }
@@ -419,7 +446,7 @@ export async function profileRoutes(app: FastifyInstance) {
 
   // Project endpoints
   app.post('/api/profile/projects', { schema: { body: projectSchema } }, async (request, reply) => {
-    const profile = await prisma.profile.findFirst();
+    const profile = await getCurrentProfile(request);
     if (!profile) {
       return reply.status(404).send({ error: 'Profile not found' });
     }
@@ -443,7 +470,11 @@ export async function profileRoutes(app: FastifyInstance) {
       const { id } = request.params as z.infer<typeof cuidSchema>;
       const data = request.body as z.infer<typeof projectSchema>;
 
-      const existing = await prisma.project.findUnique({ where: { id } });
+      const profile = await getCurrentProfile(request);
+      if (!profile) {
+        return reply.status(404).send({ error: 'Profile not found' });
+      }
+      const existing = await prisma.project.findFirst({ where: { id, profileId: profile.id } });
       if (!existing) {
         return reply.status(404).send({ error: 'Project not found' });
       }
@@ -466,7 +497,11 @@ export async function profileRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const { id } = request.params as z.infer<typeof cuidSchema>;
 
-      const existing = await prisma.project.findUnique({ where: { id } });
+      const profile = await getCurrentProfile(request);
+      if (!profile) {
+        return reply.status(404).send({ error: 'Profile not found' });
+      }
+      const existing = await prisma.project.findFirst({ where: { id, profileId: profile.id } });
       if (!existing) {
         return reply.status(404).send({ error: 'Project not found' });
       }
@@ -481,7 +516,7 @@ export async function profileRoutes(app: FastifyInstance) {
     '/api/profile/work-experiences',
     { schema: { body: workExperienceSchema } },
     async (request, reply) => {
-      const profile = await prisma.profile.findFirst();
+      const profile = await getCurrentProfile(request);
       if (!profile) {
         return reply.status(404).send({ error: 'Profile not found' });
       }
@@ -506,7 +541,13 @@ export async function profileRoutes(app: FastifyInstance) {
       const { id } = request.params as z.infer<typeof cuidSchema>;
       const data = request.body as z.infer<typeof workExperienceSchema>;
 
-      const existing = await prisma.workExperience.findUnique({ where: { id } });
+      const profile = await getCurrentProfile(request);
+      if (!profile) {
+        return reply.status(404).send({ error: 'Profile not found' });
+      }
+      const existing = await prisma.workExperience.findFirst({
+        where: { id, profileId: profile.id },
+      });
       if (!existing) {
         return reply.status(404).send({ error: 'Work experience not found' });
       }
@@ -529,7 +570,13 @@ export async function profileRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const { id } = request.params as z.infer<typeof cuidSchema>;
 
-      const existing = await prisma.workExperience.findUnique({ where: { id } });
+      const profile = await getCurrentProfile(request);
+      if (!profile) {
+        return reply.status(404).send({ error: 'Profile not found' });
+      }
+      const existing = await prisma.workExperience.findFirst({
+        where: { id, profileId: profile.id },
+      });
       if (!existing) {
         return reply.status(404).send({ error: 'Work experience not found' });
       }

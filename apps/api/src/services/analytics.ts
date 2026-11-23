@@ -16,10 +16,25 @@ export interface AnalyticsOverview {
     rejected: number;
     byStatus: Record<string, number>;
   };
+  /**
+   * Coorte: candidaturas CRIADAS no período, e quantas chegaram a cada etapa
+   * segundo `ApplicationEvent` (com o status atual como fallback para registros
+   * antigos, que não têm histórico). O denominador é sempre `cohort.total`.
+   */
+  cohort: {
+    total: number;
+    responded: number;
+    interviewed: number;
+    offered: number;
+  };
+  /**
+   * Fração da coorte que chegou a cada etapa, ou `null` quando o denominador
+   * é zero. `null` vira "—" na UI: `0%` seria uma afirmação falsa.
+   */
   rates: {
-    responseRate: number;
-    interviewRate: number;
-    offerRate: number;
+    responseRate: number | null;
+    interviewRate: number | null;
+    offerRate: number | null;
   };
   matches: {
     distribution: { range: string; count: number }[];
@@ -87,7 +102,7 @@ export async function getAnalyticsOverview(periodDays = 30): Promise<AnalyticsOv
   // Agrupado por chave em vez de desestruturado de um array: com tipos
   // heterogêneos do Prisma, o TS colapsa a inferência da tupla e o resultado
   // saía como `number` onde deveria ser array.
-  const [vagas, candidaturas, skills, matches] = await Promise.all([
+  const [vagas, candidaturas, coorteRaw, skills, matches] = await Promise.all([
     Promise.all([
       prisma.job.groupBy({ by: ['status'], where: naJanela, _count: { _all: true } }),
       prisma.job.count({ where: naJanela }),
@@ -98,6 +113,46 @@ export async function getAnalyticsOverview(periodDays = 30): Promise<AnalyticsOv
       where: { createdAt: { gte: from } },
       _count: { _all: true },
     }),
+    // Coorte por histórico. A contagem anterior usava o status ATUAL: uma
+    // candidatura que chegou a entrevista e depois foi rejeitada desaparecia
+    // da taxa de entrevista, e `offerRate` era ofertas/entrevistas (podia
+    // passar de 100% e caía conforme o usuário avançava).
+    //
+    // `EXISTS` garante no máximo 1 por candidatura, então nenhum numerador
+    // passa do denominador. O `OR` com o status atual cobre candidaturas
+    // antigas, anteriores ao registro de eventos.
+    prisma.$queryRaw<
+      Array<{ total: number; responded: number; interviewed: number; offered: number }>
+    >`
+      SELECT
+        count(*)::int AS total,
+        count(*) FILTER (
+          WHERE a.status IN ('INTERVIEW', 'REJECTED', 'OFFER')
+             OR EXISTS (
+               SELECT 1 FROM application_events e
+               WHERE e.application_id = a.id
+                 AND e.to_status IN ('INTERVIEW', 'REJECTED', 'OFFER')
+             )
+        )::int AS responded,
+        count(*) FILTER (
+          WHERE a.status IN ('INTERVIEW', 'OFFER')
+             OR EXISTS (
+               SELECT 1 FROM application_events e
+               WHERE e.application_id = a.id
+                 AND e.to_status IN ('INTERVIEW', 'OFFER')
+             )
+        )::int AS interviewed,
+        count(*) FILTER (
+          WHERE a.status = 'OFFER'
+             OR EXISTS (
+               SELECT 1 FROM application_events e
+               WHERE e.application_id = a.id
+                 AND e.to_status = 'OFFER'
+             )
+        )::int AS offered
+      FROM applications a
+      WHERE a.created_at >= ${from}
+    `,
     Promise.all([
       // `job: { collectedAt: ... }` filtra pela data da vaga RELACIONADA.
       // Antes o serviço buscava o id de todas as vagas da janela e montava
@@ -140,6 +195,7 @@ export async function getAnalyticsOverview(periodDays = 30): Promise<AnalyticsOv
 
   const [jobsPorStatus, vagasTotal, vagasAnalisadas] = vagas;
   const [frequentesRaw, lacunasRaw] = skills;
+  const coorte = coorteRaw[0] ?? { total: 0, responded: 0, interviewed: 0, offered: 0 };
 
   const jobsByStatus: Record<string, number> = {};
   for (const row of jobsPorStatus) jobsByStatus[row.status] = row._count._all;
@@ -190,6 +246,12 @@ export async function getAnalyticsOverview(periodDays = 30): Promise<AnalyticsOv
     { range: '<50', count: Number(hist['<50'] ?? 0) },
   ];
 
+  // Nunca > 100%: `responded`/`interviewed`/`offered` são subconjuntos da
+  // coorte por construção (EXISTS conta cada candidatura uma vez). O `Math.min`
+  // é cinto de segurança, não a regra.
+  const taxa = (numerador: number, denominador: number): number | null =>
+    denominador > 0 ? Math.min(1, numerador / denominador) : null;
+
   return {
     period: { from, to: now },
     jobs: {
@@ -205,10 +267,11 @@ export async function getAnalyticsOverview(periodDays = 30): Promise<AnalyticsOv
       rejected: rejeitadas,
       byStatus: appsByStatus,
     },
+    cohort: coorte,
     rates: {
-      responseRate: candidaturasTotal > 0 ? aplicadas / candidaturasTotal : 0,
-      interviewRate: aplicadas > 0 ? entrevistas / aplicadas : 0,
-      offerRate: entrevistas > 0 ? ofertas / entrevistas : 0,
+      responseRate: taxa(coorte.responded, coorte.total),
+      interviewRate: taxa(coorte.interviewed, coorte.total),
+      offerRate: taxa(coorte.offered, coorte.total),
     },
     matches: {
       distribution,

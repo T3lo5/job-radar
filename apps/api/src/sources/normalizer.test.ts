@@ -116,4 +116,31 @@ describe('normalizeJobFields', () => {
     expect(job.description).not.toContain('<script>');
     expect(job.description).toContain('<p>ok</p>');
   });
+
+  it('usa a moeda da fonte quando o texto do salário não tem símbolo', () => {
+    // Adzuna Brasil manda só "8000-12000"; sem a moeda explícita o parser
+    // assumia USD.
+    const job = normalizeJobFields({ ...base, salary: '8000-12000', currency: 'brl' });
+    expect(job.salaryMin).toBe(8000);
+    expect(job.salaryMax).toBe(12000);
+    expect(job.salaryCurrency).toBe('BRL');
+  });
+
+  it('moeda explícita vence o símbolo e código inválido cai no parser', () => {
+    expect(
+      normalizeJobFields({ ...base, salary: 'R$ 8.000', currency: 'USD' }).salaryCurrency,
+    ).toBe('USD');
+
+    // "reais" não é código ISO: ignora e mantém o que o texto diz.
+    expect(
+      normalizeJobFields({ ...base, salary: 'R$ 8.000', currency: 'reais' }).salaryCurrency,
+    ).toBe('BRL');
+  });
+
+  it('sem salário não inventa moeda', () => {
+    const job = normalizeJobFields({ ...base, currency: 'BRL' });
+    expect(job.salaryMin).toBeNull();
+    expect(job.salaryMax).toBeNull();
+    expect(job.salaryCurrency).toBeNull();
+  });
 });

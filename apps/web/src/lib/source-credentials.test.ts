@@ -18,10 +18,12 @@ describe('sourceNeedsCredentials', () => {
     for (const id of [
       'remoteok',
       'remotive',
-      'google-jobs',
       'indeed',
       'jobicy',
       'weworkremotely',
+      'wellfound',
+      'hackernews',
+      'dribbble',
     ]) {
       expect(sourceNeedsCredentials(id)).toBe(false);
     }

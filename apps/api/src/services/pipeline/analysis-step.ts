@@ -1,33 +1,6 @@
 import type { ProcessingContext, ProcessingStep, StepDependencies } from './step.js';
 
-export interface AnalysisInput {
-  score: number;
-  nivel_aderencia: string;
-  prioridade: string;
-  pontos_fortes: string[];
-  requisitos_faltantes: string[];
-  riscos: string[];
-  modalidade: string;
-  senioridade: string;
-  tecnologias_match: string[];
-  resumo_vaga: string;
-  recomendacao: string;
-}
-
-export function mapRecomendacao(rec: string): 'STRONG_APPLY' | 'APPLY' | 'CONSIDER' | 'SKIP' {
-  switch (rec) {
-    case 'Candidatar':
-      return 'STRONG_APPLY';
-    case 'Avaliar':
-      return 'CONSIDER';
-    case 'Ignorar':
-      return 'SKIP';
-    default:
-      return 'CONSIDER';
-  }
-}
-
-export function generateBasicAnalysis(match: any): AnalysisInput {
+export function generateBasicAnalysis(match: unknown): AnalysisInput {
   if (!match) {
     return {
       score: 0,
@@ -44,27 +17,57 @@ export function generateBasicAnalysis(match: any): AnalysisInput {
     };
   }
 
-  const breakdown = match.breakdown as Record<string, number>;
-  const strengths = Object.entries(breakdown)
-    .filter(([, v]) => v >= 70)
-    .map(([k]) => k);
-  const gaps = Object.entries(breakdown)
-    .filter(([, v]) => v < 50)
-    .map(([k]) => k);
+  const m = match as { score: number; breakdown?: Record<string, unknown> };
+  const criterionScores = Object.entries((m.breakdown ?? {}) as Record<string, unknown>).filter(
+    (entry): entry is [string, number] => typeof entry[1] === 'number',
+  );
+
+  const strengths = criterionScores.filter(([, v]) => v >= 70).map(([k]) => k);
+  const gaps = criterionScores.filter(([, v]) => v < 50).map(([k]) => k);
 
   return {
-    score: match.score,
-    nivel_aderencia: match.score >= 80 ? 'Alta' : match.score >= 60 ? 'Média' : 'Baixa',
-    prioridade: match.score >= 80 ? 'alta' : match.score >= 60 ? 'media' : 'baixa',
+    score: m.score,
+    nivel_aderencia: m.score >= 80 ? 'Alta' : m.score >= 60 ? 'Média' : 'Baixa',
+    prioridade: m.score >= 80 ? 'alta' : m.score >= 60 ? 'media' : 'baixa',
     pontos_fortes: strengths,
     requisitos_faltantes: gaps,
     riscos: [],
     modalidade: 'nao_informado',
     senioridade: 'nao_informado',
     tecnologias_match: strengths,
-    resumo_vaga: `Match score: ${match.score}. ${strengths.length > 0 ? `Strong in: ${strengths.join(', ')}.` : ''} ${gaps.length > 0 ? `Gaps: ${gaps.join(', ')}.` : ''}`,
-    recomendacao: match.score >= 70 ? 'Candidatar' : match.score >= 50 ? 'Avaliar' : 'Ignorar',
+    resumo_vaga: `Match score: ${m.score}. ${strengths.length > 0 ? `Strong in: ${strengths.join(', ')}.` : ''} ${gaps.length > 0 ? `Gaps: ${gaps.join(', ')}.` : ''}`,
+    recomendacao: m.score >= 70 ? 'Candidatar' : m.score >= 50 ? 'Avaliar' : 'Ignorar',
   };
+}
+
+export type AnalysisRecommendation = 'STRONG_APPLY' | 'APPLY' | 'CONSIDER' | 'SKIP';
+
+export interface AnalysisInput {
+  score: number;
+  nivel_aderencia: string;
+  prioridade: string;
+  pontos_fortes: string[];
+  requisitos_faltantes: string[];
+  riscos: string[];
+  modalidade: string;
+  senioridade: string;
+  tecnologias_match: string[];
+  resumo_vaga: string;
+  recomendacao: string;
+}
+
+export function mapRecomendacao(rec: string, score?: number): AnalysisRecommendation {
+  switch (rec.trim().toLowerCase()) {
+    case 'candidatar':
+      return typeof score === 'number' && score >= 85 ? 'STRONG_APPLY' : 'APPLY';
+    case 'avaliar':
+      return 'CONSIDER';
+    case 'ignorar':
+      return 'SKIP';
+    default:
+      console.warn(`[analysis] recomendação desconhecida da IA: "${rec}" — usando CONSIDER`);
+      return 'CONSIDER';
+  }
 }
 
 export class AnalysisStep implements ProcessingStep {
@@ -78,61 +81,12 @@ export class AnalysisStep implements ProcessingStep {
 
     if (!job) return;
 
-    const match = await ctx.prisma.jobMatch.findFirst({
+    const matches = await ctx.prisma.jobMatch.findMany({
       where: { jobId: ctx.jobId },
+      orderBy: { score: 'desc' },
     });
 
-    const profile = await ctx.prisma.profile.findFirst({
-      include: {
-        skills: { include: { skill: true } },
-        workExperiences: true,
-        education: true,
-        certifications: true,
-      },
-    });
-
-    let analysis: AnalysisInput;
-
-    if (profile) {
-      try {
-        const profileSkills = profile.skills.map(
-          (ps: { skill: { name: string } }) => ps.skill.name,
-        );
-        const focusStacks = profile.focusStacks.length > 0 ? profile.focusStacks : profileSkills;
-
-        const user = await ctx.prisma.user.findFirst({});
-        let resumeText: string | undefined;
-        if (user) {
-          const resume = await ctx.prisma.resume.findFirst({
-            where: { userId: user.id },
-            orderBy: { uploadedAt: 'desc' },
-          });
-          if (resume?.rawText) {
-            resumeText = resume.rawText;
-          }
-        }
-
-        const analyzer = await deps.createJobAnalyzer();
-        analysis = await analyzer.analyze(
-          job.title,
-          job.description,
-          profileSkills,
-          resumeText ?? profile.summary ?? undefined,
-          profile.jobTypes,
-          focusStacks,
-          profile.discardTerms,
-        );
-      } catch {
-        analysis = generateBasicAnalysis(match);
-      }
-    } else {
-      analysis = generateBasicAnalysis(match);
-    }
-
-    // Sem match não há profileId, e gravar '' numa coluna com FK para Profile
-    // estoura no banco — a vaga ficava travada em ANALYZING depois de 3
-    // tentativas. Sem match não há o que analisar.
-    if (!match) {
+    if (!Array.isArray(matches) || matches.length === 0) {
       await ctx.prisma.job.update({
         where: { id: ctx.jobId },
         data: { status: 'DONE' },
@@ -140,26 +94,85 @@ export class AnalysisStep implements ProcessingStep {
       return;
     }
 
-    await ctx.prisma.jobAnalysis.upsert({
-      where: { jobId_profileId: { jobId: ctx.jobId, profileId: match.profileId } },
-      update: {
-        summary: analysis.resumo_vaga,
-        strengths: analysis.pontos_fortes,
-        gaps: analysis.requisitos_faltantes,
-        risks: analysis.riscos,
-        recommendation: mapRecomendacao(analysis.recomendacao) as any,
-        generatedAt: new Date(),
-      },
-      create: {
-        jobId: ctx.jobId,
-        profileId: match.profileId,
-        summary: analysis.resumo_vaga,
-        strengths: analysis.pontos_fortes,
-        gaps: analysis.requisitos_faltantes,
-        risks: analysis.riscos,
-        recommendation: mapRecomendacao(analysis.recomendacao) as any,
-      },
-    });
+    for (const match of matches) {
+      const profile = await ctx.prisma.profile.findUnique({
+        where: { id: (match as { profileId: string }).profileId },
+        include: {
+          skills: { include: { skill: true } },
+          workExperiences: true,
+          education: true,
+          certifications: true,
+        },
+      });
+
+      let analysis: AnalysisInput;
+
+      if (profile) {
+        try {
+          const profileSkills = (
+            profile as { skills: Array<{ skill: { name: string } }> } & {
+              focusStacks?: string[];
+              jobTypes?: string[];
+              discardTerms?: string[];
+              userId: string;
+              summary?: string;
+            }
+          ).skills.map((ps) => ps.skill.name);
+          const focusStacksRaw = (profile as { focusStacks?: string[] }).focusStacks;
+          const focusStacks =
+            focusStacksRaw != null && focusStacksRaw.length > 0 ? focusStacksRaw : profileSkills;
+
+          const resume = await ctx.prisma.resume.findFirst({
+            where: { userId: (profile as { userId: string }).userId },
+            orderBy: { uploadedAt: 'desc' },
+          });
+          const resumeText = (resume as { rawText?: string } | null)?.rawText ?? undefined;
+
+          const analyzer = await deps.createJobAnalyzer();
+          analysis = await analyzer.analyze(
+            (job as { title: string; description: string }).title,
+            (job as { title: string; description: string }).description,
+            profileSkills,
+            resumeText ?? (profile as { summary?: string }).summary ?? undefined,
+            (profile as { jobTypes?: string[] }).jobTypes,
+            focusStacks,
+            (profile as { discardTerms?: string[] }).discardTerms,
+          );
+        } catch {
+          analysis = generateBasicAnalysis(match);
+        }
+      } else {
+        analysis = generateBasicAnalysis(match);
+      }
+
+      const recommendation = mapRecomendacao(analysis.recomendacao, analysis.score) as string;
+
+      await ctx.prisma.jobAnalysis.upsert({
+        where: {
+          jobId_profileId: {
+            jobId: ctx.jobId,
+            profileId: (match as { profileId: string }).profileId,
+          },
+        },
+        update: {
+          summary: analysis.resumo_vaga,
+          strengths: analysis.pontos_fortes,
+          gaps: analysis.requisitos_faltantes,
+          risks: analysis.riscos,
+          recommendation,
+          generatedAt: new Date(),
+        },
+        create: {
+          jobId: ctx.jobId,
+          profileId: (match as { profileId: string }).profileId,
+          summary: analysis.resumo_vaga,
+          strengths: analysis.pontos_fortes,
+          gaps: analysis.requisitos_faltantes,
+          risks: analysis.riscos,
+          recommendation,
+        },
+      });
+    }
 
     await this.updateStatus(ctx, 'ANALYZING', 'DONE');
   }
@@ -167,7 +180,7 @@ export class AnalysisStep implements ProcessingStep {
   private async updateStatus(ctx: ProcessingContext, from: string, to: string): Promise<void> {
     await ctx.prisma.job.update({
       where: { id: ctx.jobId },
-      data: { status: to as any },
+      data: { status: to },
     });
     await ctx.prisma.jobProcessingLog.create({
       data: { jobId: ctx.jobId, fromStatus: from, toStatus: to },

@@ -1,5 +1,6 @@
 import type { ProcessingContext, ProcessingStep, StepDependencies } from './step.js';
 import type { JobExtraction } from '../ai/job-extractor.js';
+import type { SkillResolverDb } from './skill-resolver.js';
 import { resolveSkills } from './skill-resolver.js';
 
 export class ExtractionStep implements ProcessingStep {
@@ -11,7 +12,19 @@ export class ExtractionStep implements ProcessingStep {
 
     await this.updateStatus(ctx, 'RAW', 'EXTRACTING');
 
-    const { extracted, skillIds } = await this.extract(ctx, job, deps);
+    const { extracted, skillIds } = await this.extract(
+      ctx,
+      job as {
+        title: string;
+        description: string;
+        location: string | null;
+        remote: string;
+        salaryMin: number | null;
+        salaryMax: number | null;
+        salaryCurrency: string | null;
+      },
+      deps,
+    );
 
     // Deduplica por skillId antes de gravar: dois nomes que caem na mesma skill
     // (React e react) virariam a mesma linha duas vezes, e o skipDuplicates do
@@ -27,7 +40,7 @@ export class ExtractionStep implements ProcessingStep {
     await ctx.prisma.job.update({
       where: { id: ctx.jobId },
       data: {
-        rawData: extracted as any,
+        rawData: extracted,
         status: 'MATCHING',
       },
     });
@@ -69,7 +82,7 @@ export class ExtractionStep implements ProcessingStep {
       // Resolvido em lote: eram 2 queries por skill (findFirst + upsert), e
       // uma vaga com 20 skills virava 40 round-trips. Sao 3 no total,
       // independentes de quantas skills a vaga tiver.
-      const resolvidas = await resolveSkills(ctx.prisma.skill, extracted.skills);
+      const resolvidas = await resolveSkills(ctx.prisma.skill as SkillResolverDb, extracted.skills);
       return { extracted, skillIds: [...new Set([...resolvidas.values()].map((s) => s.id))] };
     } catch {
       const { extracted, skillIds } = await this.fallbackExtraction(ctx, job);
@@ -80,7 +93,7 @@ export class ExtractionStep implements ProcessingStep {
   private async updateStatus(ctx: ProcessingContext, from: string, to: string): Promise<void> {
     await ctx.prisma.job.update({
       where: { id: ctx.jobId },
-      data: { status: to as any },
+      data: { status: to },
     });
     await ctx.prisma.jobProcessingLog.create({
       data: { jobId: ctx.jobId, fromStatus: from, toStatus: to },
@@ -89,22 +102,25 @@ export class ExtractionStep implements ProcessingStep {
 
   private async fallbackExtraction(
     ctx: ProcessingContext,
-    job: any,
+    job: {
+      title: string;
+      description: string;
+      location: string | null;
+      remote: string;
+      salaryMin: number | null;
+      salaryMax: number | null;
+      salaryCurrency: string | null;
+    },
   ): Promise<{ extracted: JobExtraction; skillIds: string[] }> {
     // `select` em vez de `findMany({})`: o casamento é por nome, então
     // `aliases`, `category` e `createdAt` vinham na rede sem uso. Com o
     // catálogo em ~700 skills isso são ~50KB de menos por vaga.
-    const allSkills = await ctx.prisma.skill.findMany({
+    const allSkills = (await ctx.prisma.skill.findMany({
       select: { id: true, name: true },
-    });
+    })) as Array<{ id: string; name: string }>;
     const descriptionLower = job.description.toLowerCase();
 
-    // Casar por substring puro fazia 'JavaScript' casar com a skill 'Java' e
-    // 'R' casar com qualquer palavra contendo 'r' — poluindo o catálogo de
-    // skills da vaga, que alimenta todo o matching. Agora exige fronteira de
-    // palavra (o \b do regex) e nenhuma skill seria casada -> lista vazia, que
-    // o matcher trata como "sem sinal" em vez de inventar Requirement.
-    const matchedSkills = allSkills.filter((skill: any) => {
+    const matchedSkills = allSkills.filter((skill) => {
       const name = (skill.name ?? '').toLowerCase().trim();
       if (name.length < 2) return false;
       const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -114,22 +130,19 @@ export class ExtractionStep implements ProcessingStep {
     const extracted: JobExtraction = {
       title: job.title,
       seniority: null,
-      skills: matchedSkills.map((s: any) => s.name),
+      skills: matchedSkills.map((s) => s.name),
       experienceYears: null,
       languages: [],
       location: job.location,
-      remote: job.remote,
+      remote: job.remote as 'REMOTE' | 'HYBRID' | 'ON_SITE' | 'UNKNOWN',
       salary: { min: job.salaryMin, max: job.salaryMax, currency: job.salaryCurrency },
       requiredRequirements: [],
       niceToHave: [],
     };
 
-    // Os IDs sao das linhas que acabaram de ser lidas. O fallback so
-    // REUTILIZA skills do catalogo: ele nunca cria skill nova, senao cada
-    // falha de IA poluiria o catalogo sem revisao.
     return {
       extracted,
-      skillIds: [...new Set<string>(matchedSkills.map((s: any) => s.id as string))],
+      skillIds: [...new Set<string>(matchedSkills.map((s) => s.id))],
     };
   }
 }

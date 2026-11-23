@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { setupApi, authApi, aiProvidersApi, profileApi } from '../services/api';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -25,7 +28,35 @@ const JOB_TYPE_OPTIONS = [
   'Marketing',
   'Growth Marketing',
   'Sales',
-];
+] as const;
+
+const accountSchema = z
+  .object({
+    email: z.string().email('Informe um email válido'),
+    password: z.string().min(8, 'A senha precisa ter pelo menos 8 caracteres'),
+    confirmPassword: z.string(),
+  })
+  .refine((d) => d.password === d.confirmPassword, {
+    message: 'As senhas não coincidem',
+    path: ['confirmPassword'],
+  });
+
+type AccountData = z.infer<typeof accountSchema>;
+
+const aiSchema = z.object({
+  name: z.string().min(1, 'Informe um nome'),
+  baseUrl: z.string().min(1, 'Informe a URL base'),
+  apiKey: z.string().min(1, 'Informe a API Key'),
+  model: z.string().min(1, 'Informe o modelo'),
+});
+
+type AIData = z.infer<typeof aiSchema>;
+
+const cronSchema = z.object({
+  cronExpression: z.string().min(1, 'Informe a expressão cron'),
+});
+
+type CronData = z.infer<typeof cronSchema>;
 
 export function SetupPage() {
   const navigate = useNavigate();
@@ -33,27 +64,19 @@ export function SetupPage() {
   const [isCompleting, setIsCompleting] = useState(false);
   const [isCreatingAccount, setIsCreatingAccount] = useState(false);
 
-  const [aiName, setAiName] = useState('BAI');
-  const [aiBaseUrl, setAiBaseUrl] = useState('');
-  const [aiApiKey, setAiApiKey] = useState('');
-  const [aiModel, setAiModel] = useState('deepseek-v4-flash');
-  const [aiTestResult, setAiTestResult] = useState<{ ok: boolean; error?: string } | null>(null);
+  const aiTestResult = useState<{ ok: boolean; error?: string } | null>(null);
   const [aiTesting, setAiTesting] = useState(false);
 
   const handleTestAiConnection = async () => {
-    if (!aiBaseUrl || !aiApiKey || !aiModel) {
-      toast.error('Preencha todos os campos antes de testar');
-      return;
-    }
     setAiTesting(true);
-    setAiTestResult(null);
+    aiTestResult[1](null);
     try {
       const result = await setupApi.testConnection({
-        baseUrl: aiBaseUrl,
-        apiKey: aiApiKey,
-        model: aiModel,
+        baseUrl: aiForm.watch('baseUrl'),
+        apiKey: aiForm.watch('apiKey'),
+        model: aiForm.watch('model'),
       });
-      setAiTestResult(result);
+      aiTestResult[1](result);
       if (result.ok) {
         toast.success('Conexão OK!');
       } else {
@@ -61,26 +84,15 @@ export function SetupPage() {
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Erro desconhecido';
-      setAiTestResult({ ok: false, error: msg });
+      aiTestResult[1]({ ok: false, error: msg });
       toast.error(`Erro: ${msg}`);
     } finally {
       setAiTesting(false);
     }
   };
 
-  const [profileTitle, setProfileTitle] = useState('');
-  const [profileLocation, setProfileLocation] = useState('');
-  const [profileSeniority, setProfileSeniority] = useState('');
-  const [profileJobTypes, setProfileJobTypes] = useState<string[]>([]);
-  const [newJobType, setNewJobType] = useState('');
-
-  const [cronExpression, setCronExpression] = useState('0 */6 * * *');
-
   // Passo 0: criação da conta. Se a conta já existe (ex.: reload no meio do
   // wizard), começa direto no passo de perfil.
-  const [accountEmail, setAccountEmail] = useState('');
-  const [accountPassword, setAccountPassword] = useState('');
-  const [accountConfirm, setAccountConfirm] = useState('');
   const [accountCreated, setAccountCreated] = useState(false);
   const [isCheckingAccount, setIsCheckingAccount] = useState(true);
 
@@ -106,26 +118,61 @@ export function SetupPage() {
     };
   }, []);
 
-  async function handleCreateAccount() {
-    if (!accountEmail.trim()) {
-      toast.error('Informe um email');
-      return;
-    }
-    if (accountPassword.length < 8) {
-      toast.error('A senha precisa ter pelo menos 8 caracteres');
-      return;
-    }
-    if (accountPassword !== accountConfirm) {
-      toast.error('As senhas não coincidem');
-      return;
-    }
+  const accountForm = useForm<AccountData>({
+    resolver: zodResolver(accountSchema),
+    defaultValues: { email: '', password: '', confirmPassword: '' },
+  });
 
+  const profileForm = useForm<{
+    title: string;
+    location: string;
+    seniority: string;
+    jobTypes: string[];
+  }>({
+    defaultValues: { title: '', location: '', seniority: '', jobTypes: [] },
+  });
+
+  const aiForm = useForm<AIData>({
+    resolver: zodResolver(aiSchema),
+    defaultValues: {
+      name: 'BAI',
+      baseUrl: '',
+      apiKey: '',
+      model: 'deepseek-v4-flash',
+    },
+  });
+
+  const cronForm = useForm<CronData>({
+    resolver: zodResolver(cronSchema),
+    defaultValues: { cronExpression: '0 */6 * * *' },
+  });
+
+  const [profileJobTypes, setProfileJobTypes] = useState<string[]>([]);
+  const [newJobType, setNewJobType] = useState('');
+
+  const addJobType = () => {
+    if (!newJobType.trim()) return;
+    if (!profileJobTypes.includes(newJobType.trim())) {
+      const next = [...profileJobTypes, newJobType.trim()];
+      setProfileJobTypes(next);
+      profileForm.setValue('jobTypes', next);
+    }
+    setNewJobType('');
+  };
+
+  const removeJobType = (type: string) => {
+    const next = profileJobTypes.filter((t) => t !== type);
+    setProfileJobTypes(next);
+    profileForm.setValue('jobTypes', next);
+  };
+
+  const handleCreateAccount = accountForm.handleSubmit(async (data) => {
     setIsCreatingAccount(true);
     try {
       await authApi.setup({
-        email: accountEmail.trim(),
-        password: accountPassword,
-        confirmPassword: accountConfirm,
+        email: data.email.trim(),
+        password: data.password,
+        confirmPassword: data.confirmPassword,
       });
       // A resposta já seta o cookie de sessão: o resto do wizard usa ela.
       setAccountCreated(true);
@@ -139,39 +186,36 @@ export function SetupPage() {
     } finally {
       setIsCreatingAccount(false);
     }
-  }
-
-  const addJobType = () => {
-    if (!newJobType.trim()) return;
-    if (!profileJobTypes.includes(newJobType.trim())) {
-      setProfileJobTypes([...profileJobTypes, newJobType.trim()]);
-    }
-    setNewJobType('');
-  };
-
-  const removeJobType = (type: string) => {
-    setProfileJobTypes(profileJobTypes.filter((t) => t !== type));
-  };
+  });
 
   const handleComplete = async () => {
     setIsCompleting(true);
     try {
-      if (aiName && aiBaseUrl && aiApiKey && aiModel) {
+      const aiValues = aiForm.getValues();
+      if (aiValues.name && aiValues.baseUrl && aiValues.apiKey && aiValues.model) {
         await aiProvidersApi.create({
-          name: aiName,
-          baseUrl: aiBaseUrl,
-          apiKey: aiApiKey,
-          model: aiModel,
+          name: aiValues.name,
+          baseUrl: aiValues.baseUrl,
+          apiKey: aiValues.apiKey,
+          model: aiValues.model,
           isActive: true,
         });
       }
-      await setupApi.saveCron({ jobCollectionCron: cronExpression });
+      await setupApi.saveCron({
+        jobCollectionCron: cronForm.getValues().cronExpression,
+      });
 
-      if (profileTitle || profileLocation || profileSeniority || profileJobTypes.length > 0) {
+      const profileValues = profileForm.getValues();
+      if (
+        profileValues.title ||
+        profileValues.location ||
+        profileValues.seniority ||
+        profileJobTypes.length > 0
+      ) {
         await profileApi.update({
-          title: profileTitle || undefined,
-          location: profileLocation || undefined,
-          seniority: profileSeniority ? (profileSeniority as any) : undefined,
+          title: profileValues.title || undefined,
+          location: profileValues.location || undefined,
+          seniority: profileValues.seniority ? (profileValues.seniority as any) : undefined,
           jobTypes: profileJobTypes.length > 0 ? profileJobTypes : undefined,
         });
       }
@@ -179,8 +223,12 @@ export function SetupPage() {
       await setupApi.complete();
       toast.success('Configuração concluída!');
       navigate('/');
-    } catch {
-      toast.error('Erro na configuração');
+    } catch (err) {
+      const message =
+        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ??
+        (err as Error)?.message ??
+        'Erro na configuração';
+      toast.error(message);
       setIsCompleting(false);
     }
   };
@@ -190,17 +238,21 @@ export function SetupPage() {
       await setupApi.complete();
       toast.success('Setup pulado. Você pode configurar depois em Configurações.');
       navigate('/');
-    } catch {
-      toast.error('Erro ao pular setup');
+    } catch (err) {
+      const message =
+        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ??
+        (err as Error)?.message ??
+        'Erro ao pular setup';
+      toast.error(message);
     }
   };
 
   const steps = [
-    { title: 'Conta', component: 'account' },
-    { title: 'Perfil', component: 'profile' },
-    { title: 'IA', component: 'ai' },
-    { title: 'Cron', component: 'cron' },
-    { title: 'Concluir', component: 'complete' },
+    { title: 'Conta', component: 'account', optional: false },
+    { title: 'Perfil', component: 'profile', optional: true },
+    { title: 'IA', component: 'ai', optional: false },
+    { title: 'Cron', component: 'cron', optional: true },
+    { title: 'Concluir', component: 'complete', optional: false },
   ];
 
   return (
@@ -221,6 +273,7 @@ export function SetupPage() {
               onClick={() => setStep(i)}
             >
               {s.title}
+              {s.optional && ' (opcional)'}
             </Button>
           );
         })}
@@ -228,11 +281,14 @@ export function SetupPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>{steps[step].title}</CardTitle>
+          <CardTitle>
+            {steps[step].title}
+            {steps[step].optional && ' (opcional)'}
+          </CardTitle>
         </CardHeader>
         <CardContent>
           {step === 0 && (
-            <div className="space-y-4">
+            <form onSubmit={handleCreateAccount} className="space-y-4">
               <p className="text-sm text-muted-foreground">
                 Crie a conta que você vai usar para entrar. A senha é guardada com hash — nem o
                 banco de dados consegue revelá-la. Depois disso você pode acessar de qualquer
@@ -246,12 +302,16 @@ export function SetupPage() {
                   id="account-email"
                   type="email"
                   autoComplete="username"
-                  value={accountEmail}
-                  onChange={(e) => setAccountEmail(e.target.value)}
+                  {...accountForm.register('email')}
                   placeholder="voce@exemplo.com"
                   className="mt-1"
                   autoFocus
                 />
+                {accountForm.formState.errors.email && (
+                  <p className="text-xs text-error mt-1">
+                    {accountForm.formState.errors.email.message}
+                  </p>
+                )}
               </div>
               <div>
                 <label htmlFor="account-password" className="text-sm font-medium">
@@ -261,11 +321,15 @@ export function SetupPage() {
                   id="account-password"
                   type="password"
                   autoComplete="new-password"
-                  value={accountPassword}
-                  onChange={(e) => setAccountPassword(e.target.value)}
+                  {...accountForm.register('password')}
                   placeholder="Mínimo de 8 caracteres"
                   className="mt-1"
                 />
+                {accountForm.formState.errors.password && (
+                  <p className="text-xs text-error mt-1">
+                    {accountForm.formState.errors.password.message}
+                  </p>
+                )}
               </div>
               <div>
                 <label htmlFor="account-confirm" className="text-sm font-medium">
@@ -275,18 +339,32 @@ export function SetupPage() {
                   id="account-confirm"
                   type="password"
                   autoComplete="new-password"
-                  value={accountConfirm}
-                  onChange={(e) => setAccountConfirm(e.target.value)}
+                  {...accountForm.register('confirmPassword')}
                   placeholder="Repita a senha"
                   className="mt-1"
                 />
+                {accountForm.formState.errors.confirmPassword && (
+                  <p className="text-xs text-error mt-1">
+                    {accountForm.formState.errors.confirmPassword.message}
+                  </p>
+                )}
               </div>
               <p className="flex items-start gap-2 text-xs text-muted-foreground">
                 <Lock className="h-3.5 w-3.5 mt-0.5 shrink-0" />
                 Guarde esta senha em algum lugar seguro. Ela protege seus dados e é a única forma de
                 entrar.
               </p>
-            </div>
+              <Button type="submit" disabled={isCreatingAccount || isCheckingAccount}>
+                {isCreatingAccount ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Criando...
+                  </>
+                ) : (
+                  'Criar conta'
+                )}
+              </Button>
+            </form>
           )}
 
           {step === 1 && (
@@ -298,24 +376,24 @@ export function SetupPage() {
               <div>
                 <label className="text-sm font-medium">Cargo desejado</label>
                 <Input
-                  value={profileTitle}
-                  onChange={(e) => setProfileTitle(e.target.value)}
+                  value={profileForm.watch('title')}
+                  onChange={(e) => profileForm.setValue('title', e.target.value)}
                   placeholder="Ex: Desenvolvedor Full Stack"
                 />
               </div>
               <div>
                 <label className="text-sm font-medium">Localização</label>
                 <Input
-                  value={profileLocation}
-                  onChange={(e) => setProfileLocation(e.target.value)}
+                  value={profileForm.watch('location')}
+                  onChange={(e) => profileForm.setValue('location', e.target.value)}
                   placeholder="Ex: São Paulo, Brasil"
                 />
               </div>
               <div>
                 <label className="text-sm font-medium">Senioridade</label>
                 <select
-                  value={profileSeniority}
-                  onChange={(e) => setProfileSeniority(e.target.value)}
+                  value={profileForm.watch('seniority')}
+                  onChange={(e) => profileForm.setValue('seniority', e.target.value)}
                   className="flex h-10 w-full rounded-[var(--radius-sm)] border border-border bg-surface px-3 py-2 text-sm"
                 >
                   <option value="">Selecione...</option>
@@ -339,6 +417,7 @@ export function SetupPage() {
                           removeJobType(type);
                         } else {
                           setProfileJobTypes([...profileJobTypes, type]);
+                          profileForm.setValue('jobTypes', [...profileJobTypes, type]);
                         }
                       }}
                       className={`px-3 py-1 rounded-full text-sm border ${
@@ -367,7 +446,7 @@ export function SetupPage() {
           )}
 
           {step === 2 && (
-            <div className="space-y-4">
+            <form onSubmit={aiForm.handleSubmit(() => {})} className="space-y-4">
               <p className="text-sm text-muted-foreground">
                 A IA é usada para analisar vagas, otimizar seu CV e gerar resumos. Você pode pular e
                 configurar depois em Configurações.
@@ -375,16 +454,16 @@ export function SetupPage() {
               <div>
                 <label className="text-sm font-medium">Nome</label>
                 <Input
-                  value={aiName}
-                  onChange={(e) => setAiName(e.target.value)}
+                  value={aiForm.watch('name')}
+                  onChange={(e) => aiForm.setValue('name', e.target.value)}
                   placeholder="Ex: BAI, OpenAI, Ollama..."
                 />
               </div>
               <div>
                 <label className="text-sm font-medium">Base URL (endpoint completo)</label>
                 <Input
-                  value={aiBaseUrl}
-                  onChange={(e) => setAiBaseUrl(e.target.value)}
+                  value={aiForm.watch('baseUrl')}
+                  onChange={(e) => aiForm.setValue('baseUrl', e.target.value)}
                   placeholder="https://api.openai.com/v1"
                 />
                 <p className="text-xs text-muted-foreground/70 mt-1">
@@ -395,8 +474,8 @@ export function SetupPage() {
                 <label className="text-sm font-medium">API Key</label>
                 <Input
                   type="password"
-                  value={aiApiKey}
-                  onChange={(e) => setAiApiKey(e.target.value)}
+                  value={aiForm.watch('apiKey')}
+                  onChange={(e) => aiForm.setValue('apiKey', e.target.value)}
                   placeholder="sk-..."
                 />
                 <p className="text-xs text-muted-foreground/70 mt-1">
@@ -406,8 +485,8 @@ export function SetupPage() {
               <div>
                 <label className="text-sm font-medium">Modelo</label>
                 <Input
-                  value={aiModel}
-                  onChange={(e) => setAiModel(e.target.value)}
+                  value={aiForm.watch('model')}
+                  onChange={(e) => aiForm.setValue('model', e.target.value)}
                   placeholder="deepseek-v4-flash"
                 />
               </div>
@@ -415,7 +494,12 @@ export function SetupPage() {
                 <Button
                   variant="outline"
                   onClick={handleTestAiConnection}
-                  disabled={aiTesting || !aiBaseUrl || !aiApiKey || !aiModel}
+                  disabled={
+                    aiTesting ||
+                    !aiForm.watch('baseUrl') ||
+                    !aiForm.watch('apiKey') ||
+                    !aiForm.watch('model')
+                  }
                 >
                   {aiTesting ? (
                     <>
@@ -426,34 +510,34 @@ export function SetupPage() {
                     'Testar conexão'
                   )}
                 </Button>
-                {aiTestResult && (
+                {aiTestResult[0] && (
                   <span
-                    className={`text-sm flex items-center gap-1 ${aiTestResult.ok ? 'text-success' : 'text-error'}`}
+                    className={`text-sm flex items-center gap-1 ${aiTestResult[0].ok ? 'text-success' : 'text-error'}`}
                   >
-                    {aiTestResult.ok ? (
+                    {aiTestResult[0].ok ? (
                       <CheckCircle className="h-4 w-4" />
                     ) : (
                       <XCircle className="h-4 w-4" />
                     )}
-                    {aiTestResult.ok ? 'Conexão OK' : `Erro: ${aiTestResult.error}`}
+                    {aiTestResult[0].ok ? 'Conexão OK' : `Erro: ${aiTestResult[0].error}`}
                   </span>
                 )}
               </div>
-            </div>
+            </form>
           )}
 
           {step === 3 && (
-            <div className="space-y-4">
+            <form onSubmit={cronForm.handleSubmit(() => {})} className="space-y-4">
               <div>
                 <label className="text-sm font-medium">Frequência de Coleta</label>
                 <Input
-                  value={cronExpression}
-                  onChange={(e) => setCronExpression(e.target.value)}
+                  value={cronForm.watch('cronExpression')}
+                  onChange={(e) => cronForm.setValue('cronExpression', e.target.value)}
                   placeholder="0 */6 * * *"
                 />
                 <p className="mt-1 text-xs text-muted-foreground">Padrão: a cada 6 horas</p>
               </div>
-            </div>
+            </form>
           )}
 
           {step === 4 && (
@@ -462,11 +546,15 @@ export function SetupPage() {
                 Revise suas configurações e clique em concluir para finalizar.
               </p>
               <div className="space-y-1 text-sm">
-                {profileTitle && (
+                {profileForm.watch('title') && (
                   <p>
-                    <strong>Perfil:</strong> {profileTitle}{' '}
-                    {profileSeniority && `(${profileSeniority})`}{' '}
-                    {profileLocation && `- ${profileLocation}`}
+                    <strong>Perfil:</strong> {profileForm.watch('title')}{' '}
+                    {profileForm.watch('seniority') && (
+                      <span>({profileForm.watch('seniority')})</span>
+                    )}{' '}
+                    {profileForm.watch('location') && (
+                      <span>- {profileForm.watch('location')}</span>
+                    )}
                   </p>
                 )}
                 {profileJobTypes.length > 0 && (
@@ -474,13 +562,13 @@ export function SetupPage() {
                     <strong>Vagas:</strong> {profileJobTypes.join(', ')}
                   </p>
                 )}
-                {aiName && (
+                {aiForm.watch('name') && (
                   <p>
-                    <strong>IA:</strong> {aiName} ({aiModel})
+                    <strong>IA:</strong> {aiForm.watch('name')} ({aiForm.watch('model')})
                   </p>
                 )}
                 <p>
-                  <strong>Coleta:</strong> {cronExpression}
+                  <strong>Coleta:</strong> {cronForm.watch('cronExpression')}
                 </p>
               </div>
             </div>
@@ -499,7 +587,12 @@ export function SetupPage() {
         <div className="flex gap-2">
           {/* Sem conta não há sessão, então "Pular" no passo 0 criaria um loop
               infinito com a porteira de auth. */}
-          {step > 0 && (
+          {step > 0 && steps[step].optional && (
+            <Button variant="ghost" onClick={() => setStep((s) => s + 1)}>
+              Pular
+            </Button>
+          )}
+          {step > 0 && !steps[step].optional && (
             <Button variant="ghost" onClick={handleSkip}>
               Pular
             </Button>

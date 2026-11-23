@@ -1,4 +1,5 @@
 import { type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { cn } from '../lib/utils/cn';
 import { Button } from './ui/button';
 
@@ -42,7 +43,7 @@ export function EmptyState({
         <div className="flex items-center justify-center gap-2">
           {actionHref ? (
             <Button variant="primary" asChild>
-              <a href={actionHref}>{actionLabel}</a>
+              <Link to={actionHref}>{actionLabel}</Link>
             </Button>
           ) : actionOnClick ? (
             <Button variant="primary" onClick={actionOnClick}>

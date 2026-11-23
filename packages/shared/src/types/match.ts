@@ -3,6 +3,23 @@ export type MatchScore = number;
 export type MatchLabel = 'excelente' | 'muito_boa' | 'boa' | 'possivel' | 'baixa';
 
 /**
+ * Por que uma skill da vaga casou com o perfil.
+ *
+ * - `EXACT`: mesmo nome depois da normalização (`Node.js` = `Node`).
+ * - `ALIAS`: sinônimo declarado no catálogo ou grafia conhecida (`JS` = `JavaScript`).
+ * - `GROUP`: tecnologia relacionada, vale meio ponto (`Vue` para quem tem `React`).
+ */
+export type SkillMatchReason = 'EXACT' | 'ALIAS' | 'GROUP';
+
+export interface SkillEvidence {
+  /** Nome da skill como veio na vaga. */
+  skill: string;
+  reason: SkillMatchReason;
+  /** Skill do perfil que produziu a correspondência, quando não é o mesmo nome. */
+  via?: string;
+}
+
+/**
  * Critérios do score de match.
  *
  * `other` foi REMOVIDO: era um critério que ninguém calculava e que ficava
@@ -19,6 +36,11 @@ export interface MatchBreakdown {
   location: number;
   cloudDevOps: number;
   languages: number;
+  /**
+   * Evidência por skill avaliada. Opcional porque matches gravados antes do
+   * ticket 25 não têm o campo — a UI precisa lidar com a ausência.
+   */
+  skillEvidence?: SkillEvidence[];
 }
 
 export interface MatchResult {

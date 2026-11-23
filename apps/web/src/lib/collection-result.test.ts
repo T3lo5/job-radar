@@ -73,3 +73,47 @@ describe('formatElapsed', () => {
     expect(formatElapsed(-5)).toBe('0s');
   });
 });
+
+describe('textoResultadoColeta — fontes desativadas', () => {
+  it('lista as fontes puladas quando algumas foram desativadas', () => {
+    const r = textoResultadoColeta({
+      coletadas: 3,
+      erros: [],
+      fontesExecutadas: ['remoteok', 'remotive'],
+      fontesPuladas: ['linkedin'],
+    });
+
+    expect(r.detalhe).toContain('2 fontes consultadas');
+    expect(r.detalhe).toContain('1 desativada: linkedin');
+    expect(r.temErro).toBe(false);
+  });
+
+  it('pluraliza as desativadas', () => {
+    const r = textoResultadoColeta({
+      coletadas: 0,
+      erros: [],
+      fontesExecutadas: ['remoteok'],
+      fontesPuladas: ['linkedin', 'indeed'],
+    });
+
+    expect(r.detalhe).toContain('2 desativadas: linkedin, indeed');
+  });
+
+  it('não promete que "as fontes responderam" quando todas estão desligadas', () => {
+    const r = textoResultadoColeta({
+      coletadas: 0,
+      erros: [],
+      fontesExecutadas: [],
+      fontesPuladas: ['linkedin', 'remoteok'],
+    });
+
+    expect(r.titulo).toContain('todas as fontes estão desativadas');
+    expect(r.detalhe).toContain('Nenhuma fonte foi consultada');
+    expect(r.detalhe).not.toContain('responderam');
+  });
+
+  it('mantém o texto antigo quando o relatório não traz a lista de fontes', () => {
+    const r = textoResultadoColeta({ coletadas: 2, erros: [] });
+    expect(r.detalhe).toBe('Prontas para processamento na fila.');
+  });
+});

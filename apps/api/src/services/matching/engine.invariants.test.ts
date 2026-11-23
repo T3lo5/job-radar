@@ -53,9 +53,15 @@ describe('normalização de skills', () => {
     expect(score(['C#'], ['C#']).breakdown.technologies).toBe(100);
   });
 
+  it('trata grafia abreviada como a mesma skill, não como prefixo', () => {
+    // Ticket 25: 'JS' é JavaScript (sinônimo, match cheio). O que não pode
+    // acontecer é 'Java' casar por prefixo com 'JavaScript'.
+    expect(score(['JavaScript'], ['JS']).breakdown.technologies).toBe(100);
+    expect(score(['JavaScript'], ['Java']).breakdown.technologies).toBe(0);
+  });
+
   it('não produz string vazia que casaria com qualquer coisa', () => {
-    // 'JS' virava '' na versão anterior.
-    expect(score(['JavaScript'], ['JS']).breakdown.technologies).not.toBe(100);
+    expect(score(['JavaScript'], ['!!!']).breakdown.technologies).toBe(0);
   });
 
   it('normaliza variações de escrita', () => {

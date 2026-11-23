@@ -1,39 +1,63 @@
 import { Bot } from 'grammy';
+import type { UserFromGetMe } from 'grammy/types';
+import { getEnv } from '../config/env.js';
 import { settingsService } from './settings-service.js';
 import { prisma } from '../db/prisma.js';
 import { matchLabelFor, MATCH_LABELS } from '@job-radar/shared';
-import { SETTINGS_SCOPE, TELEGRAM_SETTINGS } from './settings-keys.js';
+import { APP_SETTINGS, SETTINGS_SCOPE, TELEGRAM_SETTINGS } from './settings-keys.js';
+import {
+  buildStartMessage,
+  createChatGuard,
+  escapeMarkdown,
+  resolveDashboardUrl,
+} from './telegram-format.js';
+
+/**
+ * Dependências do bot, injetáveis para teste.
+ *
+ * Antes, o módulo lia settings direto e chamava `bot.start()` no mesmo lugar em
+ * que registrava os comandos: não dava para simular um update sem abrir conexão
+ * com o Telegram. Separar também deixa explícito que nada aqui escreve setting.
+ */
+export interface TelegramBotDeps {
+  readSetting: (scope: string, key: string) => Promise<string | null>;
+  /** Fallback do link do dashboard, quando o setting não está configurado. */
+  fallbackPublicUrl?: string;
+  /**
+   * Só para teste: evita o `getMe()` de rede na primeira atualização. Em
+   * produção fica indefinido e o grammy busca os dados do bot sozinho.
+   */
+  botInfo?: UserFromGetMe;
+}
 
 let bot: Bot | null = null;
 
-export async function startTelegramBot(): Promise<void> {
-  const botToken = await settingsService.get(SETTINGS_SCOPE.TELEGRAM, TELEGRAM_SETTINGS.BOT_TOKEN);
-  if (!botToken) {
-    console.log('Telegram bot token not configured, skipping bot startup');
-    return;
-  }
+/**
+ * Registra os comandos em um Bot já criado. Não inicia polling — quem chama
+ * decide (`startTelegramBot` em produção, `handleUpdate` nos testes).
+ */
+export function createTelegramBot(botToken: string, deps: TelegramBotDeps): Bot {
+  const created = new Bot(botToken, deps.botInfo ? { botInfo: deps.botInfo } : undefined);
 
-  bot = new Bot(botToken);
+  // Antes de qualquer comando: o chat precisa ser o configurado em settings.
+  // A versão anterior aceitava /start de qualquer um e SALVAVA o chat id, o
+  // que entregava vagas, matches e candidaturas do dono ao intruso. O chat
+  // agora só muda por ação explícita em /api/setup/telegram ou /api/settings.
+  created.use(
+    createChatGuard(() => deps.readSetting(SETTINGS_SCOPE.TELEGRAM, TELEGRAM_SETTINGS.CHAT_ID)),
+  );
 
   // Commands
-  bot.command('start', async (ctx) => {
-    await ctx.reply(
-      '👋 *Bem-vindo ao Job Radar!*\n\n' +
-        'Seu assistente pessoal para vagas de tecnologia.\n\n' +
-        'Comandos disponíveis:\n' +
-        '/hoje — Vagas de hoje\n' +
-        '/top — Top 5 matches\n' +
-        '/stats — Estatísticas\n' +
-        '/help — Ajuda\n\n' +
-        '🔗 Dashboard: http://localhost:5173',
-      { parse_mode: 'Markdown' },
+  created.command('start', async (ctx) => {
+    const dashboardUrl = resolveDashboardUrl(
+      await deps.readSetting(SETTINGS_SCOPE.APP, APP_SETTINGS.PUBLIC_URL),
+      deps.fallbackPublicUrl,
     );
 
-    // Save chat ID
-    await saveChatId(ctx.chat.id);
+    await ctx.reply(buildStartMessage(dashboardUrl), { parse_mode: 'Markdown' });
   });
 
-  bot.command('help', async (ctx) => {
+  created.command('help', async (ctx) => {
     await ctx.reply(
       '📋 *Comandos do Job Radar:*\n\n' +
         '/start — Inicializar bot\n' +
@@ -45,7 +69,7 @@ export async function startTelegramBot(): Promise<void> {
     );
   });
 
-  bot.command('hoje', async (ctx) => {
+  created.command('hoje', async (ctx) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -62,8 +86,11 @@ export async function startTelegramBot(): Promise<void> {
 
     let message = `📅 *Vagas de hoje (${jobs.length}):*\n\n`;
     for (const job of jobs.slice(0, 5)) {
-      message += `• *${job.title}* — ${job.company}\n`;
-      message += `  ${job.location ?? 'Localização N/A'}\n\n`;
+      // Título e empresa vêm do HTML da vaga: sem escape, um `*` ou `[` solto
+      // faz o Telegram rejeitar a mensagem inteira (400) ou deixa o texto de
+      // terceiro controlar a formatação.
+      message += `• *${escapeMarkdown(job.title)}* — ${escapeMarkdown(job.company)}\n`;
+      message += `  ${escapeMarkdown(job.location ?? 'Localização N/A')}\n\n`;
     }
 
     if (jobs.length > 5) {
@@ -73,8 +100,11 @@ export async function startTelegramBot(): Promise<void> {
     await ctx.reply(message, { parse_mode: 'Markdown' });
   });
 
-  bot.command('top', async (ctx) => {
-    const profile = await prisma.profile.findFirst();
+  created.command('top', async (ctx) => {
+    // Bot do Telegram é global (um chat para a instalação). Sem usuário de
+    // sessão aqui, usar o perfil mais antigo explicitamente — mesmo critério da
+    // coleta — em vez de depender da ordem que o Postgres devolver.
+    const profile = await prisma.profile.findFirst({ orderBy: { createdAt: 'asc' } });
     if (!profile) {
       await ctx.reply('❌ Perfil não configurado.');
       return;
@@ -96,14 +126,14 @@ export async function startTelegramBot(): Promise<void> {
     for (const match of matches) {
       const label = matchLabelFor(match.score);
       const visual = MATCH_LABELS[label];
-      message += `${visual.emoji} *${match.score}* — ${match.job.title}\n`;
-      message += `  ${match.job.company}\n\n`;
+      message += `${visual.emoji} *${match.score}* — ${escapeMarkdown(match.job.title)}\n`;
+      message += `  ${escapeMarkdown(match.job.company)}\n\n`;
     }
 
     await ctx.reply(message, { parse_mode: 'Markdown' });
   });
 
-  bot.command('stats', async (ctx) => {
+  created.command('stats', async (ctx) => {
     const [totalJobs, totalMatches, totalApplications, byStatus] = await Promise.all([
       prisma.job.count(),
       prisma.jobMatch.count(),
@@ -130,21 +160,31 @@ export async function startTelegramBot(): Promise<void> {
   });
 
   // Error handler
-  bot.catch((err) => {
+  created.catch((err) => {
     console.error('Telegram bot error:', err);
   });
 
-  // Start polling
+  return created;
+}
+
+export async function startTelegramBot(): Promise<void> {
+  const botToken = await settingsService.get(SETTINGS_SCOPE.TELEGRAM, TELEGRAM_SETTINGS.BOT_TOKEN);
+  if (!botToken) {
+    console.log('Telegram bot token not configured, skipping bot startup');
+    return;
+  }
+
+  bot = createTelegramBot(botToken, {
+    readSetting: (scope, key) => settingsService.get(scope, key),
+    fallbackPublicUrl: getEnv().APP_PUBLIC_URL,
+  });
+
   bot.start();
   console.log('Telegram bot started');
 }
 
 export function getBot(): Bot | null {
   return bot;
-}
-
-async function saveChatId(chatId: number): Promise<void> {
-  await settingsService.set(SETTINGS_SCOPE.TELEGRAM, TELEGRAM_SETTINGS.CHAT_ID, String(chatId));
 }
 
 export async function stopTelegramBot(): Promise<void> {

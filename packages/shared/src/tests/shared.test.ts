@@ -7,7 +7,18 @@ import {
   seniorityLabel,
   maxSeniority,
 } from '../utils/seniority-label.js';
-import { APPLICATION_STATUSES, isApplicationStatus } from '../types/application.js';
+import {
+  APPLICATION_STATUSES,
+  isApplicationStatus,
+  ATS_PROVIDERS,
+  isAtsProvider,
+} from '../types/application.js';
+import {
+  LANGUAGE_LEVEL_CODES,
+  LANGUAGE_LEVELS,
+  isLanguageLevel,
+  levelLabel,
+} from '../utils/language-levels.js';
 import { JOB_PROCESSING_STATUSES, isJobProcessingStatus } from '../types/job.js';
 import { MATCH_CRITERIA } from '../types/match.js';
 
@@ -144,5 +155,48 @@ describe('MATCH_CRITERIA nao promete campo morto', () => {
       'cloudDevOps',
       'languages',
     ]);
+  });
+});
+
+describe('catálogo de ATS', () => {
+  it('aceita exatamente os valores oferecidos na UI', () => {
+    expect(ATS_PROVIDERS).toContain('Greenhouse');
+    expect(ATS_PROVIDERS).toContain('Outro');
+    expect(isAtsProvider('Workday')).toBe(true);
+    expect(isAtsProvider('Outro')).toBe(true);
+  });
+
+  it('rejeita valor fora do catálogo e null/vazio', () => {
+    expect(isAtsProvider('ATSInventado')).toBe(false);
+    expect(isAtsProvider('')).toBe(false);
+    expect(isAtsProvider(null)).toBe(false);
+    expect(isAtsProvider(42)).toBe(false);
+  });
+});
+
+describe('níveis de idioma em CEFR', () => {
+  it('LANGUAGE_LEVEL_CODES bate com o enum LanguageLevel do Prisma', () => {
+    expect([...LANGUAGE_LEVEL_CODES].sort()).toEqual(lerEnumDoSchema('LanguageLevel').sort());
+  });
+
+  it('aceita os códigos CEFR e NATIVE, rejeita o vocabulário antigo', () => {
+    for (const code of LANGUAGE_LEVEL_CODES) expect(isLanguageLevel(code)).toBe(true);
+    expect(isLanguageLevel('INTERMEDIATE')).toBe(false);
+    expect(isLanguageLevel('FLUENT')).toBe(false);
+    expect(isLanguageLevel('')).toBe(false);
+    expect(isLanguageLevel(null)).toBe(false);
+  });
+
+  it('levelLabel mostra o código no perfil, não o enum cru', () => {
+    expect(levelLabel('B2')).toBe('B2');
+    expect(levelLabel('NATIVE')).toBe('Nativo');
+    // valor legado nunca deve aparecer na tela
+    expect(levelLabel('INTERMEDIATE')).not.toBe('INTERMEDIATE');
+  });
+
+  it('cada nível tem rótulo próprio para o select', () => {
+    for (const level of LANGUAGE_LEVELS) {
+      expect(level.label.length).toBeGreaterThan(0);
+    }
   });
 });

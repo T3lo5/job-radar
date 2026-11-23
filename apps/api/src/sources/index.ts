@@ -1,13 +1,17 @@
 import type { JobSource, SourceQuery, NormalizedJob } from '@job-radar/shared';
+import { settingsService } from '../services/settings-service.js';
+import { SETTINGS_SCOPE, sourceEnabledKey } from '../services/settings-keys.js';
 import { fetchRemoteOk } from './remote-ok.js';
 import { fetchRemotive } from './remotive.js';
 import { fetchLinkedIn } from './linkedin.js';
-import { fetchGoogleJobs } from './google-jobs.js';
 import { fetchIndeed } from './indeed.js';
-import { fetchLinkedInJobs } from './reddit.js';
+import { fetchLinkedInJobs } from './linkedin-apify.js';
 import { fetchAdzuna } from './adzuna.js';
 import { fetchJobicy } from './jobicy.js';
 import { fetchWeWorkRemotely } from './weworkremotely.js';
+import { fetchWellfound } from './wellfound.js';
+import { fetchHackerNews } from './hackernews.js';
+import { fetchDribbble } from './dribbble.js';
 
 class RemoteOkSource implements JobSource {
   id = 'remoteok';
@@ -39,17 +43,6 @@ class LinkedInSource implements JobSource {
 
   async fetch(query: SourceQuery): Promise<NormalizedJob[]> {
     return fetchLinkedIn(query);
-  }
-}
-
-class GoogleJobsSource implements JobSource {
-  id = 'google-jobs';
-  name = 'Google Jobs';
-  description =
-    'Vagas agregadas pelo Google Jobs. Boa cobertura geral, mas menos filtros avançados que boards especializados.';
-
-  async fetch(query: SourceQuery): Promise<NormalizedJob[]> {
-    return fetchGoogleJobs(query);
   }
 }
 
@@ -97,6 +90,50 @@ class WeWorkRemotelySource implements JobSource {
   }
 }
 
+class WellfoundSource implements JobSource {
+  id = 'wellfound';
+  name = 'Wellfound';
+  description =
+    'Vagas de startups e tecnologia do Wellfound (ex-AngelList). Boa cobertura para empresas early-stage e remotas.';
+
+  async fetch(query: SourceQuery): Promise<NormalizedJob[]> {
+    return fetchWellfound(query);
+  }
+}
+
+class HackerNewsSource implements JobSource {
+  id = 'hackernews';
+  name = 'Hacker News (Who is Hiring)';
+  description =
+    'Feed "Who is Hiring" do Hacker News via API pública do Algolia. Posts diretos de startups (muitas YC), perfil técnico. Sem autenticação.';
+
+  async fetch(query: SourceQuery): Promise<NormalizedJob[]> {
+    return fetchHackerNews(query);
+  }
+}
+
+class DribbbleSource implements JobSource {
+  id = 'dribbble';
+  name = 'Dribbble';
+  description =
+    'Vagas de design e criação do board público do Dribbble. Foco em produto visual, UX/UI e branding.';
+
+  async fetch(query: SourceQuery): Promise<NormalizedJob[]> {
+    return fetchDribbble(query);
+  }
+}
+
+class LinkedInApifySource implements JobSource {
+  id = 'linkedin-apify';
+  name = 'LinkedIn (Apify API)';
+  description =
+    'Busca no LinkedIn via Apify Actor. Retorna mais resultados que o scraping guest direto, mas depende de token e custo por resultado.';
+
+  async fetch(query: SourceQuery): Promise<NormalizedJob[]> {
+    return fetchLinkedInJobs(query);
+  }
+}
+
 class ManualSource implements JobSource {
   id = 'manual';
   name = 'Manual';
@@ -108,28 +145,19 @@ class ManualSource implements JobSource {
   }
 }
 
-class RedditSource implements JobSource {
-  id = 'linkedin-apify';
-  name = 'LinkedIn (Apify API)';
-  description =
-    'Busca no LinkedIn via Apify Actor. Retorna mais resultados que o scraping guest direto, mas depende de token e custo por resultado.';
-
-  async fetch(query: SourceQuery): Promise<NormalizedJob[]> {
-    return fetchLinkedInJobs(query);
-  }
-}
-
 const sources: Map<string, JobSource> = new Map([
   [new RemoteOkSource().id, new RemoteOkSource()],
   [new RemotiveSource().id, new RemotiveSource()],
   [new LinkedInSource().id, new LinkedInSource()],
-  [new GoogleJobsSource().id, new GoogleJobsSource()],
   [new IndeedSource().id, new IndeedSource()],
   [new AdzunaSource().id, new AdzunaSource()],
   [new JobicySource().id, new JobicySource()],
   [new WeWorkRemotelySource().id, new WeWorkRemotelySource()],
+  [new WellfoundSource().id, new WellfoundSource()],
+  [new HackerNewsSource().id, new HackerNewsSource()],
+  [new DribbbleSource().id, new DribbbleSource()],
   [new ManualSource().id, new ManualSource()],
-  [new RedditSource().id, new RedditSource()],
+  [new LinkedInApifySource().id, new LinkedInApifySource()],
 ]);
 
 export function getSource(id: string): JobSource | undefined {
@@ -165,9 +193,37 @@ export async function collectFromSource(
   }
 }
 
+/**
+ * Fontes habilitadas segundo os settings `source_<id>_enabled`.
+ *
+ * Setting ausente = habilitada: é o estado de uma instalação nova e o que a UI
+ * mostra. Só o valor exato `'false'` desliga.
+ */
+export async function getEnabledSourceIds(): Promise<Set<string>> {
+  const settings = await settingsService.getAll(SETTINGS_SCOPE.SOURCES);
+  return new Set(
+    getAllSources()
+      .filter((source) => settings[sourceEnabledKey(source.id)] !== 'false')
+      .map((source) => source.id),
+  );
+}
+
+export interface CollectFromAllOptions {
+  /**
+   * Quando já calculado pelo chamador, evita reler os settings a cada camada de
+   * busca. Ausente, a própria função lê — assim qualquer call site respeita o
+   * toggle, não só `runCollection`.
+   */
+  enabledSourceIds?: ReadonlySet<string>;
+}
+
 export async function collectFromAllSources(
   query: SourceQuery,
+  options: CollectFromAllOptions = {},
 ): Promise<Array<{ sourceId: string; jobs: NormalizedJob[]; error?: string }>> {
-  const sources = getAllSources();
+  const enabled = options.enabledSourceIds ?? (await getEnabledSourceIds());
+  // Antes o laço usava `getAllSources()` direto: desligar a fonte na UI mudava
+  // só a tela, e a coleta continuava gastando rate limit nela.
+  const sources = getAllSources().filter((source) => enabled.has(source.id));
   return Promise.all(sources.map((s) => collectFromSource(s.id, query)));
 }

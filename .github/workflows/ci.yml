@@ -95,3 +95,151 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+  # Gate de segurança: falha se houver vulnerabilidades de nível high ou
+  # acima. Relatório salvo como artefato para inspeção.
+  audit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Nível `high` começa informativo: exibe o relatório e publica o
+      # artefato, mas não bloqueia. Após 1 semana, remover o `|| true` para
+      # tornar o gate bloqueante (critério de aceite: PR com vulnerabilidade
+      # high falha no CI).
+      - name: Run pnpm audit
+        id: audit
+        run: |
+          set +e
+          pnpm audit --audit-level high --json > audit-report.json || true
+          echo "audit_failed=$?" >> $GITHUB_OUTPUT
+          cat audit-report.json
+
+      - name: Publish audit report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pnpm-audit-report
+          path: audit-report.json
+          retention-days: 7
+
+      - name: Fail on high vulnerabilities
+        if: steps.audit.outputs.audit_failed != '0'
+        run: |
+          echo "::warning::pnpm audit encontrou vulnerabilidades de nível high ou acima."
+          echo "Veja o artefato pnpm-audit-report para detalhes e justifique exceções em docs/."
+          exit 1
+
+  # Gate de integridade do schema: falha se schema.prisma e as migrations
+  # divergerem (alterar schema sem migration bloqueia o CI).
+  drift-check:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: jobradar
+          POSTGRES_PASSWORD: jobradar
+          POSTGRES_DB: jobradar_shadow
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U jobradar -d jobradar_shadow"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter @job-radar/api exec prisma generate
+
+      # `migrate diff` compara o estado atual das migrations contra o
+      # datamodel do schema.prisma. Com --exit-code, qualquer divergência
+      # retorna código != 0 e falha o job. Precisa de um shadow database
+      # temporário para comparar contra as migrations.
+      - name: Check schema vs migrations drift
+        env:
+          SHADOW_DATABASE_URL: postgresql://jobradar:jobradar@localhost:5432/jobradar_shadow
+        run: pnpm --filter @job-radar/api exec prisma migrate diff \
+          --from-migrations prisma/migrations \
+          --to-schema-datamodel prisma/schema.prisma \
+          --shadow-database-url "${SHADOW_DATABASE_URL}" \
+          --exit-code \
+          --script
+
+  # Job que aplica migrations do zero em Postgres limpo antes dos testes,
+  # garantindo que o banco parte de um estado conhecido e consistente.
+  migrations-clean:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: jobradar
+          POSTGRES_PASSWORD: jobradar
+          POSTGRES_DB: jobradar_clean
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U jobradar -d jobradar_clean"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://jobradar:jobradar@localhost:5433/jobradar_clean
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter @job-radar/api exec prisma generate
+
+      # Aplica todas as migrations do zero no banco limpo. Se alguma migration
+      # estiver quebrada ou faltar, este job falha antes mesmo dos testes.
+      - name: Deploy migrations on clean database
+        run: pnpm --filter @job-radar/api exec prisma migrate deploy

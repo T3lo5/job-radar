@@ -21,6 +21,7 @@ model User {
   email     String    @unique
   name      String?
   password  String?
+  role      UserRole  @default(USER)
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
 
@@ -90,7 +91,7 @@ model ProfileLanguage {
   id        String @id @default(cuid())
   profileId String @map("profile_id")
   language  String
-  level     LanguageLevel @default(INTERMEDIATE)
+  level     LanguageLevel @default(B1)
 
   profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 
@@ -266,6 +267,7 @@ model Job {
   externalId    String?    @map("external_id")
   publishedAt   DateTime?  @map("published_at")
   collectedAt   DateTime   @default(now()) @map("collected_at")
+  discardedAt   DateTime?  @map("discarded_at")
   hash          String     @unique
   status        JobStatus  @default(RAW)
   sourceCount   Int        @default(1) @map("source_count")
@@ -286,6 +288,7 @@ model Job {
 
   @@index([status])
   @@index([collectedAt])
+  @@index([discardedAt])
   @@index([sourceId])
   @@index([externalId, sourceId])
   @@index([seniority])
@@ -371,6 +374,7 @@ model Application {
   status      ApplicationStatus @default(FOUND)
   appliedAt   DateTime?         @map("applied_at")
   followUpAt  DateTime?         @map("follow_up_at")
+  atsUsed     String?           @map("ats_used")
   notes       String?
   salary      Int?
   result      String?
@@ -378,13 +382,37 @@ model Application {
   createdAt   DateTime          @default(now()) @map("created_at")
   updatedAt   DateTime          @updatedAt @map("updated_at")
 
-  job     Job                @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  profile Profile            @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  events  ApplicationEvent[]
+  job         Job                     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  profile     Profile                 @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  events      ApplicationEvent[]
+  attachments ApplicationAttachment[]
 
   @@unique([jobId, profileId])
   @@index([status])
   @@map("applications")
+}
+
+// Arquivo anexado a uma candidatura (carta, portfólio, print de contato...).
+//
+// O binário fica no mesmo storage dos CVs (`file-storage.ts`); aqui guardamos
+// só os metadados. Sem isto, cada artefato da candidatura vivia em uma tela
+// diferente e não havia como exportar nem remover.
+model ApplicationAttachment {
+  id            String   @id @default(cuid())
+  applicationId String   @map("application_id")
+  /// Nome no storage (UUID + extensão), nunca o nome original.
+  filename      String
+  originalName  String   @map("original_name")
+  mimeType      String   @map("mime_type")
+  size          Int
+  /// cover_letter | portfolio | other
+  kind          String   @default("other")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId])
+  @@map("application_attachments")
 }
 
 model ApplicationEvent {
@@ -446,14 +474,20 @@ model AiRun {
 // =============================================================================
 
 model AiProvider {
-  id        String   @id @default(cuid())
-  name      String
-  baseUrl   String   @map("base_url")
-  apiKey    String   @map("api_key")
-  model     String
-  isActive  Boolean  @default(false) @map("is_active")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id          String   @id @default(cuid())
+  name        String
+  baseUrl     String   @map("base_url")
+  // apiKey mantida temporariamente para migração lazy de dados (ticket 40).
+  // Após todos os provedores serem migrados, esta coluna pode ser removida.
+  apiKey      String?   @map("api_key")
+  // apiKey criptografada com AES-256-GCM (ticket 40). Nunca armazenar em texto claro.
+  encryptedApiKey String?   @map("encrypted_api_key")
+  apiKeyIv    String?   @map("api_key_iv")
+  apiKeyTag   String?   @map("api_key_tag")
+  model       String
+  isActive    Boolean   @default(false) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
 
   @@map("ai_providers")
 }
@@ -491,6 +525,14 @@ model SettingMeta {
 // ENUMS
 // =============================================================================
 
+// Papel da conta. O produto é single-user, mas separar ADMIN de USER permite
+// fechar /api/admin e /api/setup para contas criadas por engano ou por
+// ALLOW_SIGNUP — antes qualquer sessão podia trocar provedor de IA e Telegram.
+enum UserRole {
+  ADMIN
+  USER
+}
+
 enum Seniority {
   UNKNOWN
   INTERN
@@ -510,10 +552,12 @@ enum RemoteMode {
 }
 
 enum LanguageLevel {
-  BASIC
-  INTERMEDIATE
-  ADVANCED
-  FLUENT
+  A1
+  A2
+  B1
+  B2
+  C1
+  C2
   NATIVE
 }
 
@@ -563,6 +607,7 @@ enum AiRunType {
   MATCH_EXPLAIN
   JOB_ANALYZE
   CV_OPTIMIZE
+  COVER_LETTER
   SUMMARIZE
   OTHER
 }

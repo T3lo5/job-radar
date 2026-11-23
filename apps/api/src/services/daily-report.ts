@@ -1,6 +1,7 @@
 import { prisma } from '../db/prisma.js';
 import { matchLabelFor, MATCH_LABELS } from '@job-radar/shared';
 import { telegramChannel } from './notifications.js';
+import { escapeMarkdown } from './telegram-format.js';
 
 interface DailyReportData {
   totalJobs: number;
@@ -15,6 +16,12 @@ interface DailyReportData {
     salaryMin: number | null;
     salaryMax: number | null;
     url: string;
+  }>;
+  pendingFollowUps: Array<{
+    id: string;
+    jobTitle: string;
+    jobCompany: string;
+    daysIdle: number;
   }>;
 }
 
@@ -48,12 +55,55 @@ export async function generateDailyReport(): Promise<DailyReportData> {
     url: m.job.url,
   }));
 
+  const pendingApplications = await prisma.application.findMany({
+    where: {
+      status: {
+        notIn: ['ARCHIVED', 'REJECTED', 'OFFER'],
+      },
+      AND: [
+        {
+          OR: [{ followUpAt: null }, { followUpAt: { lte: today } }],
+        },
+      ],
+    },
+    include: {
+      job: {
+        select: {
+          title: true,
+          company: true,
+        },
+      },
+      events: {
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+      },
+    },
+    orderBy: {
+      followUpAt: 'asc',
+    },
+  });
+
+  const pendingFollowUps = pendingApplications.map((app) => {
+    const lastEvent = app.events[0];
+    const lastInteraction = lastEvent ? lastEvent.createdAt : app.updatedAt;
+    const daysIdle = Math.floor(
+      (today.getTime() - lastInteraction.getTime()) / (1000 * 60 * 60 * 24),
+    );
+    return {
+      id: app.id,
+      jobTitle: app.job.title ?? '(sem título)',
+      jobCompany: app.job.company ?? '(sem empresa)',
+      daysIdle: Math.max(0, daysIdle),
+    };
+  });
+
   return {
     totalJobs,
     processedJobs,
     compatibleJobs,
     highMatchJobs,
     topJobs,
+    pendingFollowUps,
   };
 }
 
@@ -80,17 +130,32 @@ export async function sendDailyReport(): Promise<{
     for (const job of report.topJobs) {
       const label = matchLabelFor(job.score);
       const visual = MATCH_LABELS[label];
-      message += `${visual.emoji} *${job.score}* — ${job.title}\n`;
-      message += `  ${job.company}`;
-      if (job.location) message += ` — ${job.location}`;
+      // Dados da vaga são externos. `*` e `[` sem escape quebram o Markdown e
+      // o Telegram devolve 400 — o relatório inteiro deixa de ser enviado.
+      message += `${visual.emoji} *${job.score}* — ${escapeMarkdown(job.title)}\n`;
+      message += `  ${escapeMarkdown(job.company)}`;
+      if (job.location) message += ` — ${escapeMarkdown(job.location)}`;
       message += '\n';
       if (job.salaryMin && job.salaryMax) {
         message += `  💰 R$ ${job.salaryMin} - R$ ${job.salaryMax}\n`;
       }
-      message += `  🔗 [Ver vaga](${job.url})\n\n`;
+      message += `  🔗 [Ver vaga](${escapeMarkdown(job.url)})\n\n`;
     }
   } else {
     message += '_Nenhuma vaga avaliada hoje._\n';
+  }
+
+  // Follow-ups vencidos: candidaturas sem retorno há mais de X dias.
+  if (report.pendingFollowUps.length > 0) {
+    message += `\n⏰ *Follow-ups vencidos (${report.pendingFollowUps.length}):*\n\n`;
+    for (const fup of report.pendingFollowUps.slice(0, 10)) {
+      message += `• ${escapeMarkdown(fup.jobTitle)} — ${escapeMarkdown(fup.jobCompany)}`;
+      message += ` — ${fup.daysIdle} dia(s) sem retorno\n`;
+    }
+    if (report.pendingFollowUps.length > 10) {
+      message += `… e mais ${report.pendingFollowUps.length - 10}.\n`;
+    }
+    message += '\n';
   }
 
   const result = await telegramChannel.send({

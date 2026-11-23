@@ -7,7 +7,15 @@ import { z } from 'zod';
  * criar qualquer setting em qualquer escopo (inclusive um escopo que o código
  * depois passaria a ler). A lista é fechada de propósito.
  */
-export const WRITABLE_SCOPES = ['ai', 'telegram', 'cron', 'sources', 'apify', 'adzuna'] as const;
+export const WRITABLE_SCOPES = [
+  'ai',
+  'telegram',
+  'cron',
+  'sources',
+  'apify',
+  'adzuna',
+  'app',
+] as const;
 
 export const scopeSchema = z.enum(WRITABLE_SCOPES);
 

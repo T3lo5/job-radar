@@ -42,7 +42,6 @@ export function verifyPassword(password: string, stored: string): boolean {
 
 export const SESSION_COOKIE = 'jr_session';
 const SESSION_TTL_DAYS = 30;
-
 /** Token opaco devolvido ao cliente. Só o hash dele vai para o banco. */
 function newToken(): string {
   return randomBytes(32).toString('base64url');
@@ -68,6 +67,28 @@ export async function hasAccount(): Promise<boolean> {
     select: { id: true },
   });
   return user !== null;
+}
+
+/**
+ * Cadastro público é exceção, não padrão.
+ *
+ * O produto é single-user: a primeira conta nasce pelo setup. Sem esta regra,
+ * qualquer visitante criava uma conta e — como as rotas liam o "primeiro"
+ * perfil — enxergava os dados do dono. `ALLOW_SIGNUP=true` reabre o fluxo para
+ * testes e para quem realmente quiser múltiplas contas.
+ */
+export function isSignupAllowed(accountExists: boolean, allowSignup: boolean): boolean {
+  return allowSignup || !accountExists;
+}
+
+/**
+ * Lê `ALLOW_SIGNUP` sem passar pela validação completa de env.
+ *
+ * A validação de env exige `SETTINGS_ENCRYPTION_KEY`; amarrar o cadastro a ela
+ * faria testes e comandos pontuais quebrarem por um motivo sem relação.
+ */
+export function allowSignupEnabled(): boolean {
+  return (process.env.ALLOW_SIGNUP ?? 'false').toLowerCase() === 'true';
 }
 
 export interface CreatedSession {
@@ -111,7 +132,7 @@ export async function resolveSession(token: string | undefined) {
   // Atualização discreta: não bloqueia a request se falhar.
   void prisma.session
     .update({ where: { id: session.id }, data: { lastUsedAt: new Date() } })
-    .catch(() => {});
+    .catch((err) => console.error('erro ao atualizar lastUsedAt da sessão:', err));
 
   return { session, user: session.user };
 }
@@ -122,7 +143,7 @@ export async function revokeSession(token: string): Promise<void> {
       where: { tokenHash: hashToken(token), revokedAt: null },
       data: { revokedAt: new Date() },
     })
-    .catch(() => {});
+    .catch((err) => console.error('erro ao revogar sessão:', err));
 }
 
 export async function revokeSessionById(userId: string, sessionId: string): Promise<boolean> {
@@ -180,7 +201,7 @@ export async function setupAccount(input: {
     const userId = passwordless[0].id;
     await prisma.user.update({
       where: { id: userId },
-      data: { email, password: hashPassword(input.password) },
+      data: { email, password: hashPassword(input.password), role: 'ADMIN' },
     });
     return { userId };
   }
@@ -189,13 +210,31 @@ export async function setupAccount(input: {
   if (existing) {
     await prisma.user.update({
       where: { id: existing.id },
-      data: { password: hashPassword(input.password) },
+      data: { password: hashPassword(input.password), role: 'ADMIN' },
     });
     return { userId: existing.id };
   }
 
   const created = await prisma.user.create({
-    data: { email, password: hashPassword(input.password) },
+    data: { email, password: hashPassword(input.password), role: 'ADMIN' },
+    select: { id: true },
+  });
+  return { userId: created.id };
+}
+
+export async function signupAccount(input: {
+  email: string;
+  password: string;
+}): Promise<{ userId: string }> {
+  const email = input.email.trim().toLowerCase();
+
+  const existing = await prisma.user.findUnique({ where: { email } });
+  if (existing) {
+    throw new Error('Este email já está em uso');
+  }
+
+  const created = await prisma.user.create({
+    data: { email, password: hashPassword(input.password), role: 'USER' },
     select: { id: true },
   });
   return { userId: created.id };

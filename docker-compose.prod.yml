@@ -80,6 +80,10 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-jobradar}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-jobradar}
       REDIS_URL: redis://redis:6379
       SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY}
+      # Obrigatório em produção: a API falha o boot sem as origens do dashboard.
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      # 1 hop: o nginx do container `web` é quem fala com a API.
+      TRUST_PROXY: ${TRUST_PROXY:-1}
     ports:
       - "127.0.0.1:${APP_PORT:-3001}:3001"
     volumes:

@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
+import type { UseFormReturn } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useState, useEffect, useRef } from 'react';
@@ -17,13 +18,22 @@ import {
 } from '../components/ui/select';
 import { Skeleton } from '../components/ui/skeleton';
 import { EmptyState } from '../components/empty-state';
+import { ErrorState } from '../components/error-state';
 import { ErrorBoundary } from '../components/error-boundary';
 import { toast } from '../components/ui/toast';
 import { handleApiError } from '../services/error-handler';
 import { cn } from '../lib/utils/cn';
-import { REMOTE_MODE_LABELS } from '@job-radar/shared';
+import {
+  REMOTE_MODE_LABELS,
+  LANGUAGE_LEVELS,
+  levelLabel,
+  translateJobTitle,
+  translateDegree,
+  detectAchievement,
+} from '@job-radar/shared';
 import { initialSeniorityList, displaySeniority, syncedSeniority } from '../lib/seniority';
 import { parseSalaryInput, formatSalary } from '../lib/salary';
+import { languageFormError } from '../lib/language-form';
 
 const salaryField = z.preprocess(parseSalaryInput, z.number().int().min(0).optional());
 
@@ -117,14 +127,6 @@ const JOB_TYPE_OPTIONS = [
   'Financial Analyst',
 ];
 
-const LANGUAGE_LEVELS = [
-  { value: 'BASIC', label: 'Básico' },
-  { value: 'INTERMEDIATE', label: 'Intermediário' },
-  { value: 'ADVANCED', label: 'Avançado' },
-  { value: 'FLUENT', label: 'Fluente' },
-  { value: 'NATIVE', label: 'Nativo' },
-];
-
 function ProfileLoading() {
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -175,7 +177,7 @@ export function ProfilePage() {
   });
   const [showLanguageForm, setShowLanguageForm] = useState(false);
   const [editingLanguageId, setEditingLanguageId] = useState<string | null>(null);
-  const [languageForm, setLanguageForm] = useState({ language: '', level: 'INTERMEDIATE' });
+  const [languageForm, setLanguageForm] = useState({ language: '', level: '' });
   const [showCertificationForm, setShowCertificationForm] = useState(false);
   const [editingCertificationId, setEditingCertificationId] = useState<string | null>(null);
   const [certificationForm, setCertificationForm] = useState({
@@ -208,19 +210,37 @@ export function ProfilePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
 
-  const { data: profile, isLoading } = useQuery({
+  const {
+    data: profile,
+    isLoading,
+    isError: profileError,
+    error: profileErrorObj,
+    refetch: refetchProfile,
+  } = useQuery({
     queryKey: ['profile'],
-    queryFn: () => profileApi.get().catch(() => null),
+    queryFn: async () => {
+      try {
+        return await profileApi.get();
+      } catch (err) {
+        // 404 é o único caso em que "sem perfil" é verdade. Antes o catch
+        // engolia qualquer falha e a tela oferecia criar um perfil que já
+        // existia.
+        if ((err as { response?: { status?: number } }).response?.status === 404) {
+          return null;
+        }
+        throw err;
+      }
+    },
   });
 
   const profileForm = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
     defaultValues: {
       title: profile?.title ?? '',
-      seniority: profile?.seniority as any,
-      seniorityList: initialSeniorityList(profile) as any,
+      seniority: profile?.seniority as ProfileFormData['seniority'],
+      seniorityList: initialSeniorityList(profile) as ProfileFormData['seniorityList'],
       location: profile?.location ?? '',
-      remotePreference: profile?.remotePreference as any,
+      remotePreference: profile?.remotePreference as ProfileFormData['remotePreference'],
       salaryMin: profile?.salaryMin ?? undefined,
       salaryMax: profile?.salaryMax ?? undefined,
       salaryCurrency: profile?.salaryCurrency ?? 'BRL',
@@ -234,10 +254,10 @@ export function ProfilePage() {
     if (profile) {
       profileForm.reset({
         title: profile.title ?? '',
-        seniority: profile.seniority as any,
-        seniorityList: initialSeniorityList(profile) as any,
+        seniority: profile.seniority as ProfileFormData['seniority'],
+        seniorityList: initialSeniorityList(profile) as ProfileFormData['seniorityList'],
         location: profile.location ?? '',
-        remotePreference: profile.remotePreference as any,
+        remotePreference: profile.remotePreference as ProfileFormData['remotePreference'],
         salaryMin: profile.salaryMin ?? undefined,
         salaryMax: profile.salaryMax ?? undefined,
         salaryCurrency: profile.salaryCurrency ?? 'BRL',
@@ -264,12 +284,13 @@ export function ProfilePage() {
     const lista = (data.seniorityList ?? []) as string[];
     updateProfile.mutate({
       ...data,
-      seniority: (syncedSeniority(lista, data.seniority) ?? undefined) as any,
+      seniority: (syncedSeniority(lista, data.seniority) ??
+        undefined) as ProfileFormData['seniority'],
     });
   };
 
   const updateProfile = useMutation({
-    mutationFn: (data: ProfileFormData) => profileApi.update(data as any),
+    mutationFn: (data: ProfileFormData) => profileApi.update(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['profile'] });
       setEditing(false);
@@ -352,7 +373,7 @@ export function ProfilePage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['profile'] });
       setShowLanguageForm(false);
-      setLanguageForm({ language: '', level: 'INTERMEDIATE' });
+      setLanguageForm({ language: '', level: '' });
       toast.success('Idioma adicionado');
     },
     onError: () => toast.error('Erro ao adicionar idioma'),
@@ -377,6 +398,29 @@ export function ProfilePage() {
     },
     onError: () => toast.error('Erro ao remover idioma'),
   });
+
+  // O formulário começa sem nível (antes vinha `INTERMEDIATE`, valor que nem
+  // existia no select). Sem a guarda, o usuário salvava um nível que não viu.
+  const handleAddLanguage = () => {
+    const erro = languageFormError(languageForm);
+    if (erro) {
+      toast.error(erro);
+      return;
+    }
+    addLanguage.mutate({ language: languageForm.language.trim(), level: languageForm.level });
+  };
+
+  const handleUpdateLanguage = (id: string) => {
+    const erro = languageFormError(languageForm);
+    if (erro) {
+      toast.error(erro);
+      return;
+    }
+    updateLanguage.mutate({
+      id,
+      data: { language: languageForm.language.trim(), level: languageForm.level },
+    });
+  };
 
   const addCertification = useMutation({
     mutationFn: (data: {
@@ -541,17 +585,44 @@ export function ProfilePage() {
       const result = await profileApi.uploadResume(file);
       return result;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['profile'] });
       queryClient.invalidateQueries({ queryKey: ['resumes'] });
-      toast.success('CV enviado com sucesso');
+      // Recalcula o ATS check com o novo CV
+      queryClient.invalidateQueries({ queryKey: ['ats-check'] });
+      if (data.sensitiveIssues && data.sensitiveIssues.length > 0) {
+        toast.warning(
+          `${data.sensitiveIssues.length} dado(s) sensível(is) detectado(s) no CV. Revise em Perfil > Currículos.`,
+        );
+      } else {
+        toast.success('CV enviado com sucesso');
+      }
     },
     onError: (error) => handleApiError(error, 'uploadResume'),
   });
 
-  const { data: resumesData } = useQuery({
+  const {
+    data: resumesData,
+    isError: resumesError,
+    error: resumesErrorObj,
+    refetch: refetchResumes,
+  } = useQuery({
     queryKey: ['resumes'],
-    queryFn: () => profileApi.getResumes(),
+    queryFn: () => profileApi.getResumes() as Promise<ResumeItem[]>,
+  });
+
+  const {
+    data: atsCheckData,
+    isError: atsCheckError,
+    refetch: refetchAtsCheck,
+  } = useQuery({
+    queryKey: ['ats-check'],
+    queryFn: () => {
+      const defaultResume = resumesData?.find((r) => r.isDefault) ?? resumesData?.[0];
+      if (!defaultResume) return null;
+      return profileApi.atsCheck(defaultResume.id);
+    },
+    enabled: !!resumesData && resumesData.length > 0,
   });
 
   const extractResumeMutation = useMutation({
@@ -575,10 +646,10 @@ export function ProfilePage() {
         throw new Error('Dados não extraídos');
       }
 
-      const data = resume.parsedJson;
+      const data = resume.parsedJson as CvData;
       const currentProfile = await profileApi.get();
 
-      const updates: Promise<any>[] = [];
+      const updates: Promise<unknown>[] = [];
 
       // Só preenche o que está vazio. Antes sobrescrevia title e summary mesmo
       // quando o usuário já tinha curado os dois à mão — "aplicar" virava
@@ -723,6 +794,21 @@ export function ProfilePage() {
 
   if (isLoading) {
     return <ProfileLoading />;
+  }
+
+  if (profileError) {
+    return (
+      <ErrorBoundary onRetry={() => window.location.reload()}>
+        <div className="max-w-2xl mx-auto">
+          <h1 className="text-3xl font-display font-bold mb-6">Perfil</h1>
+          <ErrorState
+            title="Não foi possível carregar seu perfil"
+            error={profileErrorObj}
+            onRetry={() => void refetchProfile()}
+          />
+        </div>
+      </ErrorBoundary>
+    );
   }
 
   if (!profile) {
@@ -873,7 +959,9 @@ export function ProfilePage() {
                   />
                   <Select
                     value={skillForm.watch('level')}
-                    onValueChange={(value: string) => skillForm.setValue('level', value as any)}
+                    onValueChange={(value: string) =>
+                      skillForm.setValue('level', value as SkillFormData['level'])
+                    }
                   >
                     <SelectTrigger className="w-36">
                       <SelectValue />
@@ -955,11 +1043,11 @@ export function ProfilePage() {
                           }
                         >
                           <SelectTrigger className="mt-1">
-                            <SelectValue />
+                            <SelectValue placeholder="Selecione o nível..." />
                           </SelectTrigger>
                           <SelectContent>
                             {LANGUAGE_LEVELS.map((l) => (
-                              <SelectItem key={l.value} value={l.value}>
+                              <SelectItem key={l.code} value={l.code}>
                                 {l.label}
                               </SelectItem>
                             ))}
@@ -969,8 +1057,8 @@ export function ProfilePage() {
                       <Button
                         type="button"
                         size="sm"
-                        onClick={() => addLanguage.mutate(languageForm)}
-                        disabled={!languageForm.language.trim() || addLanguage.isPending}
+                        onClick={handleAddLanguage}
+                        disabled={addLanguage.isPending}
                       >
                         {addLanguage.isPending ? 'Adicionando...' : 'Adicionar'}
                       </Button>
@@ -996,20 +1084,18 @@ export function ProfilePage() {
                             }
                           >
                             <SelectTrigger className="h-7 w-24 text-xs">
-                              <SelectValue />
+                              <SelectValue placeholder="Nível..." />
                             </SelectTrigger>
                             <SelectContent>
                               {LANGUAGE_LEVELS.map((l) => (
-                                <SelectItem key={l.value} value={l.value}>
+                                <SelectItem key={l.code} value={l.code}>
                                   {l.label}
                                 </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
                           <button
-                            onClick={() =>
-                              updateLanguage.mutate({ id: lang.id, data: languageForm })
-                            }
+                            onClick={() => handleUpdateLanguage(lang.id)}
                             className="text-success text-sm"
                           >
                             ✓
@@ -1029,7 +1115,7 @@ export function ProfilePage() {
                             setLanguageForm({ language: lang.language, level: lang.level });
                           }}
                         >
-                          {lang.language} ({lang.level})
+                          {lang.language} ({levelLabel(lang.level)})
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -1179,7 +1265,7 @@ export function ProfilePage() {
                             });
                           }}
                         >
-                          <strong className="text-foreground">{edu.degree}</strong>
+                          <strong className="text-foreground">{translateDegree(edu.degree)}</strong>
                           <span className="text-muted-foreground">
                             {' '}
                             em {edu.field} - {edu.institution}
@@ -1254,6 +1340,15 @@ export function ProfilePage() {
                   </span>
                 </div>
 
+                {resumesError && (
+                  <ErrorState
+                    compact
+                    title="Não foi possível carregar seus currículos"
+                    error={resumesErrorObj}
+                    onRetry={() => void refetchResumes()}
+                  />
+                )}
+
                 {resumesData && resumesData.length > 0 && (
                   <div className="space-y-2">
                     {resumesData.map((resume: ResumeItem) => (
@@ -1290,6 +1385,89 @@ export function ProfilePage() {
                         </div>
                       </div>
                     ))}
+                  </div>
+                )}
+
+                {atsCheckError && resumesData && resumesData.length > 0 && (
+                  <ErrorState
+                    compact
+                    title="Não foi possível verificar o ATS do currículo"
+                    onRetry={() => void refetchAtsCheck()}
+                  />
+                )}
+
+                {atsCheckData && (
+                  <div className="mt-4 p-4 rounded-[var(--radius-sm)] bg-surface-2 border border-border">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-sm font-medium">Verificação ATS</h4>
+                      <span
+                        className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                          atsCheckData.score >= 80
+                            ? 'bg-success/10 text-success'
+                            : atsCheckData.score >= 50
+                              ? 'bg-warning/10 text-warning'
+                              : 'bg-error/10 text-error'
+                        }`}
+                      >
+                        {atsCheckData.score}/100
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      ~{atsCheckData.stats.estimatedPages} página(s) ·{' '}
+                      {atsCheckData.stats.wordCount} palavras
+                    </p>
+                    {atsCheckData.issues.length === 0 ? (
+                      <p className="text-xs text-success">Currículo parece ATS-friendly.</p>
+                    ) : (
+                      <ul className="space-y-2">
+                        {atsCheckData.issues.map((issue) => (
+                          <li key={issue.code} className="border-b pb-1 last:border-b-0">
+                            <div className="flex items-start gap-1 mb-0.5">
+                              <span
+                                className={
+                                  issue.severity === 'error'
+                                    ? 'text-error shrink-0'
+                                    : 'text-warning shrink-0'
+                                }
+                              >
+                                {issue.severity === 'error' ? '✗' : '!'}
+                              </span>
+                              <span
+                                className={`text-xs font-medium ${
+                                  issue.severity === 'error' ? 'text-error' : 'text-warning'
+                                }`}
+                              >
+                                {issue.code}
+                              </span>
+                              {issue.confidence && (
+                                <span
+                                  className={`text-xs text-muted-foreground shrink-0 ${
+                                    issue.confidence === 'alta'
+                                      ? 'text-error/60'
+                                      : issue.confidence === 'media'
+                                        ? 'text-warning/60'
+                                        : 'text-success/60'
+                                  }`}
+                                >
+                                  [{issue.confidence}]
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-foreground mb-1">{issue.message}</p>
+                            {issue.snippet && (
+                              <p className="text-[10px] text-muted-foreground mb-1">
+                                Trecho: “{issue.snippet}”
+                              </p>
+                            )}
+                            {issue.fix && (
+                              <p className="text-[10px] text-success mb-0">
+                                Como corrigir: {issue.fix}
+                              </p>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                 )}
               </div>
@@ -1902,7 +2080,9 @@ export function ProfilePage() {
                       >
                         <div className="flex items-center justify-between">
                           <div>
-                            <strong className="text-foreground">{exp.role}</strong>
+                            <strong className="text-foreground">
+                              {translateJobTitle(exp.role)}
+                            </strong>
                             <span className="text-muted-foreground"> - {exp.company}</span>
                           </div>
                           <button
@@ -1928,6 +2108,11 @@ export function ProfilePage() {
                         </div>
                         {exp.description && (
                           <p className="mt-1 text-xs text-muted-foreground">{exp.description}</p>
+                        )}
+                        {exp.description && detectAchievement(exp.description) && (
+                          <span className="mt-1 inline-flex items-center rounded-full bg-accent/10 px-2 py-0.5 text-xs text-accent">
+                            📊 {detectAchievement(exp.description)!.metric}
+                          </span>
                         )}
                         {exp.skills?.length > 0 && (
                           <div className="mt-2 flex flex-wrap gap-1">
@@ -1980,7 +2165,7 @@ function ProfileForm({
   isPending,
   onCancel,
 }: {
-  form: any;
+  form: UseFormReturn<ProfileFormData>;
   onSubmit: (data: ProfileFormData) => void;
   seniorityOptions: { value: string; label: string }[];
   jobTypeOptions: string[];
@@ -2003,21 +2188,37 @@ function ProfileForm({
     <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
       <div className="grid gap-4 md:grid-cols-2">
         <div>
-          <label className="text-sm font-medium">Cargo desejado</label>
-          <Input {...form.register('title')} placeholder="Desenvolvedor Full Stack" />
+          <label htmlFor="profile-title" className="text-sm font-medium">
+            Cargo desejado
+          </label>
+          <Input
+            id="profile-title"
+            {...form.register('title')}
+            placeholder="Desenvolvedor Full Stack"
+          />
         </div>
         <div>
-          <label className="text-sm font-medium">Localização</label>
-          <Input {...form.register('location')} placeholder="São Paulo, Brasil" />
+          <label htmlFor="profile-location" className="text-sm font-medium">
+            Localização
+          </label>
+          <Input
+            id="profile-location"
+            {...form.register('location')}
+            placeholder="São Paulo, Brasil"
+          />
           <p className="text-xs text-muted-foreground mt-1">
             País ou cidade para filtrar vagas. Ex: "Brasil", "Portugal", "EUA"
           </p>
         </div>
         <div>
-          <label className="text-sm font-medium">Modalidade</label>
+          <label htmlFor="profile-remote" className="text-sm font-medium">
+            Modalidade
+          </label>
           <Select
             value={form.watch('remotePreference')}
-            onValueChange={(value: string) => form.setValue('remotePreference', value as any)}
+            onValueChange={(value: string) =>
+              form.setValue('remotePreference', value as ProfileFormData['remotePreference'])
+            }
           >
             <SelectTrigger>
               <SelectValue placeholder="Qualquer" />
@@ -2031,16 +2232,22 @@ function ProfileForm({
           </Select>
         </div>
         <div>
-          <label className="text-sm font-medium">Salário mínimo</label>
-          <Input type="number" {...form.register('salaryMin')} />
+          <label htmlFor="profile-salary-min" className="text-sm font-medium">
+            Salário mínimo
+          </label>
+          <Input id="profile-salary-min" type="number" {...form.register('salaryMin')} />
         </div>
         <div>
-          <label className="text-sm font-medium">Salário máximo</label>
-          <Input type="number" {...form.register('salaryMax')} />
+          <label htmlFor="profile-salary-max" className="text-sm font-medium">
+            Salário máximo
+          </label>
+          <Input id="profile-salary-max" type="number" {...form.register('salaryMax')} />
         </div>
         <div>
-          <label className="text-sm font-medium">Moeda</label>
-          <Input {...form.register('salaryCurrency')} maxLength={3} />
+          <label htmlFor="profile-salary-currency" className="text-sm font-medium">
+            Moeda
+          </label>
+          <Input id="profile-salary-currency" {...form.register('salaryCurrency')} maxLength={3} />
         </div>
       </div>
 
@@ -2050,11 +2257,15 @@ function ProfileForm({
           Senioridade (selecione uma ou mais)
         </label>
         <div className="flex flex-wrap gap-2">
-          {seniorityOptions.map((opt: any) => (
+          {seniorityOptions.map((opt) => (
             <button
               key={opt.value}
               type="button"
-              onClick={() => toggleSeniority(opt.value)}
+              onClick={() =>
+                toggleSeniority(
+                  opt.value as 'INTERN' | 'JUNIOR' | 'MID' | 'SENIOR' | 'SPECIALIST' | 'LEAD',
+                )
+              }
               className={cn(
                 'px-3 py-1 rounded-full text-sm border transition-colors',
                 watchedSeniority?.includes(opt.value)

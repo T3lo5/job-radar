@@ -18,6 +18,7 @@ import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
 import { Skeleton } from '../components/ui/skeleton';
 import { EmptyState } from '../components/empty-state';
+import { ErrorState } from '../components/error-state';
 import { ErrorBoundary } from '../components/error-boundary';
 import { toast } from '../components/ui/toast';
 import { SourceCard } from '../components/SourceCard';
@@ -47,6 +48,7 @@ export function SettingsPage() {
 function SettingsPageContent() {
   const [activeTab, setActiveTab] = useState<'ai' | 'sources' | 'cron' | 'account'>('ai');
   const [editingProvider, setEditingProvider] = useState<AiProvider | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
@@ -67,27 +69,73 @@ function SettingsPageContent() {
   const [isSavingAdzuna, setIsSavingAdzuna] = useState(false);
   const queryClient = useQueryClient();
 
-  const { data: providersData, isLoading: isLoadingProviders } = useQuery({
+  const {
+    data: providersData,
+    isLoading: isLoadingProviders,
+    isError: providersError,
+    error: providersErrorObj,
+    refetch: refetchProviders,
+  } = useQuery({
     queryKey: ['aiProviders'],
     queryFn: () => aiProvidersApi.list(),
   });
 
-  const { data: apifyTokenStatus, refetch: refetchApifyToken } = useQuery({
+  const {
+    data: apifyTokenStatus,
+    isError: apifyTokenError,
+    error: apifyTokenErrorObj,
+    refetch: refetchApifyToken,
+  } = useQuery({
     queryKey: ['apifyToken'],
     queryFn: () => adminApi.apifyToken.status(),
   });
 
-  const { data: adzunaCredentialsStatus, refetch: refetchAdzunaCredentials } = useQuery({
+  const {
+    data: adzunaCredentialsStatus,
+    isError: adzunaError,
+    error: adzunaErrorObj,
+    refetch: refetchAdzunaCredentials,
+  } = useQuery({
     queryKey: ['adzunaCredentials'],
     queryFn: () => adminApi.adzunaCredentials.status(),
   });
 
-  const { data: cronSettings } = useQuery({
+  const {
+    data: cronSettings,
+    isError: cronSettingsError,
+    error: cronSettingsErrorObj,
+    refetch: refetchCronSettings,
+  } = useQuery({
     queryKey: ['settings', 'cron'],
     queryFn: () => settingsApi.getScope('cron'),
   });
 
-  const { data: sourcesData, isLoading: isLoadingSources } = useQuery({
+  const { data: appSettings, refetch: refetchAppSettings } = useQuery({
+    queryKey: ['settings', 'app'],
+    queryFn: () => settingsApi.getScope('app'),
+  });
+
+  const saveFollowUpCadence = useMutation({
+    mutationFn: (days: string) =>
+      settingsApi.set({
+        scope: 'app',
+        key: 'followUpCadenceDays',
+        value: days,
+      }),
+    onSuccess: () => {
+      void refetchAppSettings();
+      toast.success('Cadência de follow-up atualizada');
+    },
+    onError: () => toast.error('Não foi possível salvar a cadência de follow-up'),
+  });
+
+  const {
+    data: sourcesData,
+    isLoading: isLoadingSources,
+    isError: sourcesError,
+    error: sourcesErrorObj,
+    refetch: refetchSources,
+  } = useQuery({
     queryKey: ['admin', 'sources'],
     queryFn: () => adminApi.getSources(),
   });
@@ -142,8 +190,9 @@ function SettingsPageContent() {
     onSuccess: (result, id) => {
       setTestResults((prev) => ({ ...prev, [id]: result }));
     },
-    onError: (error: any, id) => {
-      setTestResults((prev) => ({ ...prev, [id]: { ok: false, error: error.message } }));
+    onError: (error, id) => {
+      const message = error instanceof Error ? error.message : String(error);
+      setTestResults((prev) => ({ ...prev, [id]: { ok: false, error: message } }));
     },
   });
 
@@ -153,8 +202,9 @@ function SettingsPageContent() {
     onSuccess: (result) => {
       setFormTestResult(result);
     },
-    onError: (error: any) => {
-      setFormTestResult({ ok: false, error: error.message });
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      setFormTestResult({ ok: false, error: message });
     },
   });
 
@@ -290,10 +340,20 @@ function SettingsPageContent() {
     mutationFn: (data: CronFormData) => setupApi.saveCron(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
-      toast.success('Agendamento salvo com sucesso');
+      toast.success('Agendamento salvo e reagendado');
     },
-    onError: () => toast.error('Erro ao salvar agendamento'),
+    onError: (error) => {
+      const status = (error as { response?: { status?: number } }).response?.status;
+      toast.error(
+        status === 400
+          ? 'Expressão cron inválida. Use: minuto hora dia-do-mês mês dia-da-semana.'
+          : 'Erro ao salvar agendamento',
+      );
+    },
   });
+
+  const formatNextRun = (iso?: string | null) =>
+    iso ? new Date(iso).toLocaleString('pt-BR') : 'não agendado';
 
   const toggleSourceMutation = useMutation({
     mutationFn: ({ sourceId, enabled }: { sourceId: string; enabled: boolean }) =>
@@ -322,7 +382,12 @@ function SettingsPageContent() {
     onSuccess: (r) => {
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
       setUltimoResultado({
-        texto: textoResultadoColeta({ coletadas: r.collected, erros: r.errors }),
+        texto: textoResultadoColeta({
+          coletadas: r.collected,
+          erros: r.errors,
+          fontesExecutadas: r.executedSources,
+          fontesPuladas: r.skippedSources,
+        }),
         erros: r.errors,
         quando: new Date(),
       });
@@ -490,6 +555,12 @@ function SettingsPageContent() {
                     </div>
                   ))}
                 </div>
+              ) : providersError ? (
+                <ErrorState
+                  title="Não foi possível carregar os provedores de IA"
+                  error={providersErrorObj}
+                  onRetry={() => void refetchProviders()}
+                />
               ) : (
                 <>
                   {providers.length === 0 && !isCreating && (
@@ -547,8 +618,10 @@ function SettingsPageContent() {
                             <Button
                               size="sm"
                               variant="danger"
-                              onClick={() => deleteMutation.mutate(provider.id)}
-                              disabled={deleteMutation.isPending}
+                              onClick={() => {
+                                setDeleteConfirmId(provider.id);
+                              }}
+                              disabled={deleteMutation.isPending || deleteConfirmId !== null}
                             >
                               Excluir
                             </Button>
@@ -751,6 +824,12 @@ function SettingsPageContent() {
                   </div>
                 ))}
               </div>
+            ) : sourcesError ? (
+              <ErrorState
+                title="Não foi possível carregar as fontes"
+                error={sourcesErrorObj}
+                onRetry={() => void refetchSources()}
+              />
             ) : sources.length === 0 ? (
               <EmptyState
                 title="Nenhuma fonte encontrada"
@@ -779,6 +858,14 @@ function SettingsPageContent() {
               </>
             )}
 
+            {apifyTokenError && (
+              <ErrorState
+                compact
+                title="Não foi possível verificar o token do Apify"
+                error={apifyTokenErrorObj}
+                onRetry={() => void refetchApifyToken()}
+              />
+            )}
             {apifyTokenStatus && (
               <div className="border-t border-border pt-6 mt-4">
                 <div className="flex items-center gap-2 mb-3">
@@ -876,6 +963,14 @@ function SettingsPageContent() {
               </div>
             )}
 
+            {adzunaError && (
+              <ErrorState
+                compact
+                title="Não foi possível verificar as credenciais da Adzuna"
+                error={adzunaErrorObj}
+                onRetry={() => void refetchAdzunaCredentials()}
+              />
+            )}
             {adzunaCredentialsStatus && (
               <div className="border-t border-border pt-6 mt-4">
                 <div className="flex items-center gap-2 mb-3">
@@ -1013,6 +1108,31 @@ function SettingsPageContent() {
                 </li>
               </ul>
             </div>
+            {cronSettings?.nextRuns && (
+              <div className="mb-4 space-y-1 rounded-lg border border-border p-3 text-sm">
+                <p className="text-muted-foreground">
+                  Próxima coleta:{' '}
+                  <strong className="text-foreground">
+                    {formatNextRun(cronSettings.nextRuns.jobCollectionCron)}
+                  </strong>
+                </p>
+                <p className="text-muted-foreground">
+                  Próximo relatório:{' '}
+                  <strong className="text-foreground">
+                    {formatNextRun(cronSettings.nextRuns.dailyReportCron)}
+                  </strong>
+                </p>
+              </div>
+            )}
+            {cronSettingsError && (
+              <ErrorState
+                compact
+                title="Não foi possível carregar o agendamento atual"
+                error={cronSettingsErrorObj}
+                onRetry={() => void refetchCronSettings()}
+                className="mb-4"
+              />
+            )}
             <form
               onSubmit={cronForm.handleSubmit((data) => saveCron.mutate(data))}
               className="space-y-4"
@@ -1031,7 +1151,22 @@ function SettingsPageContent() {
                   Padrão: todo dia às 18:05 (formato cron)
                 </p>
               </div>
-              <Button type="submit" disabled={saveCron.isPending}>
+              <div>
+                <label className="text-sm font-medium">Cadência de follow-up (dias)</label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="365"
+                  defaultValue={appSettings?.settings?.followUpCadenceDays ?? '7'}
+                  onChange={(event) => {
+                    void saveFollowUpCadence.mutate(event.target.value);
+                  }}
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Quantos dias após o último contato o sistema sugere um novo follow-up.
+                </p>
+              </div>
+              <Button type="submit" disabled={saveCron.isPending || cronSettingsError}>
                 {saveCron.isPending ? 'Salvando...' : 'Salvar'}
               </Button>
             </form>
@@ -1053,7 +1188,16 @@ function SettingsPageContent() {
             <CardContent className="space-y-4">
               <div>
                 <label className="text-sm font-medium">Email</label>
-                <Input value={me?.user.email ?? '—'} readOnly className="mt-1 bg-surface-2" />
+                {meQuery.isError ? (
+                  <ErrorState
+                    compact
+                    title="Não foi possível carregar os dados da conta"
+                    error={meQuery.error}
+                    onRetry={() => void meQuery.refetch()}
+                  />
+                ) : (
+                  <Input value={me?.user.email ?? '—'} readOnly className="mt-1 bg-surface-2" />
+                )}
               </div>
               <Button
                 variant="outline"
@@ -1119,6 +1263,13 @@ function SettingsPageContent() {
             <CardContent className="space-y-2">
               {sessionsQuery.isLoading ? (
                 <p className="text-sm text-muted-foreground">Carregando...</p>
+              ) : sessionsQuery.isError ? (
+                <ErrorState
+                  compact
+                  title="Não foi possível carregar os dispositivos conectados"
+                  error={sessionsQuery.error}
+                  onRetry={() => void sessionsQuery.refetch()}
+                />
               ) : (sessionsQuery.data?.sessions ?? []).length === 0 ? (
                 <p className="text-sm text-muted-foreground">Nenhum dispositivo ativo.</p>
               ) : (
@@ -1153,6 +1304,39 @@ function SettingsPageContent() {
               )}
             </CardContent>
           </Card>
+        </div>
+      )}
+
+      {deleteConfirmId && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          onClick={() => setDeleteConfirmId(null)}
+        >
+          <div
+            className="bg-background p-6 rounded-[var(--radius-md)] border border-border shadow-lg max-w-sm w-full mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold mb-2">Excluir provedor de IA</h3>
+            <p className="text-sm text-muted-foreground mb-6">
+              Tem certeza que deseja excluir este provedor? Esta ação não pode ser desfeita.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setDeleteConfirmId(null)}>
+                Cancelar
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => {
+                  deleteMutation.mutate(deleteConfirmId!);
+                  setDeleteConfirmId(null);
+                }}
+                disabled={deleteMutation.isPending}
+              >
+                {deleteMutation.isPending ? 'Excluindo...' : 'Excluir'}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

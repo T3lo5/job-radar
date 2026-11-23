@@ -2,6 +2,7 @@ import { prisma } from '../db/prisma.js';
 import { CvOptimizer } from './ai/cv-optimizer.js';
 import { createAiClient } from './ai/factory.js';
 import { checkCvIntegrity, fabricationErrorMessage } from './cv-integrity.js';
+import { sensitiveDataDetector } from './sensitive-data-detector.js';
 
 export interface CvOptimizationRequest {
   resumeId: string;
@@ -19,6 +20,10 @@ export interface CvOptimizationResult {
     description: string;
   }>;
   keywordsAdded: string[];
+  /** Keywords que a IA sugeriu mas foram barradas por não existirem nas fontes. */
+  keywordsDropped: string[];
+  /** Evidência das keywords aprovadas: onde e por qual forma foram achadas. */
+  keywordEvidence: Array<{ term: string; matchedAlias?: string; sourceIndex?: number }>;
   summary: string;
   /**
    * Aviso de integridade: keywords que a IA declarou mas que não existem no
@@ -70,13 +75,19 @@ export class CvOptimizationService {
 
     const profileContext = this.buildProfileContext(profile);
 
+    // Redige dados sensíveis ANTES de qualquer chamada de IA. O texto bruto
+    // nunca sai do ambiente do usuário — apenas a versão redigida com
+    // placeholders estáveis vai para o provedor.
+    const redactedResume = sensitiveDataDetector.redact(resume.rawText);
+    const redactedProfile = sensitiveDataDetector.redact(profileContext);
+
     const ai = await createAiClient();
     const optimizer = new CvOptimizer(ai);
     const result = await optimizer.optimizeWithProfile(
-      resume.rawText,
+      redactedResume.redactedText,
       jobTitle,
       finalJobDescription,
-      profileContext,
+      redactedProfile.redactedText,
     );
 
     // Regra de Ouro verificada de verdade: o prompt pede, mas quem garante é
@@ -98,6 +109,8 @@ export class CvOptimizationService {
       optimizedText: result.optimizedText,
       changes: result.changes,
       keywordsAdded: integrity.keywordsAdded,
+      keywordsDropped: integrity.droppedKeywords,
+      keywordEvidence: integrity.keywordEvidence,
       summary: result.summary,
       warning: integrity.warning,
     };

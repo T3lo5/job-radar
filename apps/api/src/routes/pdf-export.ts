@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db/prisma.js';
 import { generatePdf } from '../services/pdf-generator.js';
+import { getCurrentUserId } from '../lib/current-user.js';
 
 export async function pdfExportRoutes(app: FastifyInstance) {
   // POST /api/cv/export-pdf — export optimized CV as PDF
@@ -24,6 +25,7 @@ export async function pdfExportRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const { optimizedText } = request.body;
       let { resumeId, jobId } = request.body;
+      const userId = getCurrentUserId(request);
 
       // Espelha a resolucao de /api/cv/optimize: sem resumeId explicito, usa a
       // default (ou a mais recente). Antes o schema exigia cuid e a UI mandava a
@@ -31,7 +33,7 @@ export async function pdfExportRoutes(app: FastifyInstance) {
       if (!resumeId) {
         resumeId = (
           await prisma.resume.findFirst({
-            where: { isDefault: true },
+            where: { userId, isDefault: true },
             orderBy: { createdAt: 'desc' },
           })
         )?.id;
@@ -41,8 +43,8 @@ export async function pdfExportRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: 'No resume found. Please upload a CV first.' });
       }
 
-      const resume = await prisma.resume.findUnique({
-        where: { id: resumeId },
+      const resume = await prisma.resume.findFirst({
+        where: { id: resumeId, userId },
       });
       if (!resume) {
         return reply.status(404).send({ error: 'Resume not found' });
@@ -78,8 +80,16 @@ export async function pdfExportRoutes(app: FastifyInstance) {
   app.get(
     '/api/cv/versions/:resumeId',
     { schema: { params: z.object({ resumeId: z.string().cuid() }) } },
-    async (request) => {
+    async (request, reply) => {
       const { resumeId } = request.params as { resumeId: string };
+
+      const owned = await prisma.resume.findFirst({
+        where: { id: resumeId, userId: getCurrentUserId(request) },
+        select: { id: true },
+      });
+      if (!owned) {
+        return reply.status(404).send({ error: 'Resume not found' });
+      }
 
       return prisma.resumeVersion.findMany({
         where: { resumeId },

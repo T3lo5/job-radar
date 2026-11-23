@@ -1,140 +1,186 @@
 import { describe, it, expect, vi } from 'vitest';
+import {
+  PipelineOrchestrator,
+  type PipelineProgressDb,
+} from '../services/pipeline/orchestrator.js';
+import type { ProcessingStep } from '../services/pipeline/step.js';
 
-// Mock the AI factory
-vi.mock('../services/ai/factory.js', () => ({
-  createJobExtractor: vi.fn().mockResolvedValue({
-    extract: vi.fn().mockResolvedValue({
-      title: 'Software Engineer',
-      seniority: 'MID',
-      skills: ['React', 'TypeScript'],
-      experienceYears: '3-5 years',
-      languages: ['English'],
-      location: 'Remote',
-      remote: 'REMOTE',
-      salary: { min: 5000, max: 8000, currency: 'USD' },
-      requiredRequirements: ['React experience'],
-      niceToHave: ['Node.js'],
-    }),
-  }),
-  createJobAnalyzer: vi.fn().mockResolvedValue({
-    analyze: vi.fn().mockResolvedValue({
-      score: 85,
-      nivel_aderencia: 'Alta',
-      prioridade: 'alta',
-      pontos_fortes: ['React', 'TypeScript'],
-      requisitos_faltantes: ['Node.js'],
-      riscos: [],
-      modalidade: 'remoto',
-      senioridade: 'pleno',
-      tecnologias_match: ['React', 'TypeScript'],
-      resumo_vaga: 'Good match for the role',
-      recomendacao: 'Candidatar',
-    }),
-  }),
-}));
+/**
+ * Testes do orquestrador de verdade.
+ *
+ * O arquivo anterior montava arrays locais (`validTransitions`,
+ * `validStatuses`) e os próprios testes — passava mesmo se o pipeline inteiro
+ * fosse removido. Aqui o `PipelineOrchestrator` real roda com steps fake e um
+ * banco de progresso em memória: o que se testa é a guarda de idempotência, o
+ * retry depois de FAILED e a propagação do erro.
+ */
 
-// Mock BullMQ
-vi.mock('bullmq', () => ({
-  Queue: vi.fn().mockImplementation(() => ({
-    add: vi.fn().mockResolvedValue({ id: 'mock-job-id' }),
-    getJobCounts: vi
-      .fn()
-      .mockResolvedValue({ waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0 }),
-  })),
-  Worker: vi.fn().mockImplementation(() => ({
-    on: vi.fn(),
-  })),
-  FlowProducer: vi.fn().mockImplementation(() => ({
-    add: vi.fn().mockResolvedValue({ id: 'mock-flow-id' }),
-  })),
-}));
+interface EstadoFake {
+  status: string;
+  logs: Array<{ fromStatus: string | null; toStatus: string }>;
+}
 
-describe('Pipeline Logic', () => {
-  it('validates job status transitions', () => {
-    const validTransitions = [
-      { from: 'RAW', to: 'EXTRACTING' },
-      { from: 'EXTRACTING', to: 'MATCHING' },
-      { from: 'MATCHING', to: 'ANALYZING' },
-      { from: 'ANALYZING', to: 'DONE' },
-    ];
+function criarProgressDb(inicial: string): { estado: EstadoFake; db: PipelineProgressDb } {
+  const estado: EstadoFake = { status: inicial, logs: [] };
 
-    for (const transition of validTransitions) {
-      expect(transition.from).not.toBe(transition.to);
-    }
+  const db: PipelineProgressDb = {
+    job: {
+      findUnique: async () => ({ status: estado.status }),
+      update: async ({ data }) => {
+        estado.status = data.status;
+        return {};
+      },
+    },
+    jobProcessingLog: {
+      create: async ({ data }) => {
+        estado.logs.push({ fromStatus: data.fromStatus, toStatus: data.toStatus });
+        return {};
+      },
+      findFirst: async ({ where }) => {
+        const achado = [...estado.logs]
+          .reverse()
+          .find((log) => log.toStatus === where.toStatus && log.fromStatus !== null);
+        return achado ? { fromStatus: achado.fromStatus } : null;
+      },
+    },
+  };
+
+  return { estado, db };
+}
+
+function stepFake(run: ProcessingStep['run']): ProcessingStep & { run: ReturnType<typeof vi.fn> } {
+  return { name: 'fake', run: vi.fn(run) } as never;
+}
+
+function orquestrador(
+  steps: Record<string, ProcessingStep>,
+  db: PipelineProgressDb,
+  enqueueJob = vi.fn(async () => {}),
+) {
+  const orq = new PipelineOrchestrator(
+    { enqueueJob },
+    { steps: new Map(Object.entries(steps)), progressDb: db },
+  );
+
+  return { orq, enqueueJob };
+}
+
+describe('PipelineOrchestrator', () => {
+  it('executa a etapa pedida', async () => {
+    const { db } = criarProgressDb('RAW');
+    const extract = stepFake(async () => {});
+    const { orq } = orquestrador({ extract }, db);
+
+    await orq.run('job-1', 'extract');
+
+    expect(extract.run).toHaveBeenCalledTimes(1);
+    expect(extract.run.mock.calls[0][0]).toMatchObject({ jobId: 'job-1' });
   });
 
-  it('validates job status enum values', () => {
-    const validStatuses = ['RAW', 'EXTRACTING', 'MATCHING', 'ANALYZING', 'DONE', 'FAILED'];
+  it('não repete etapa já concluída', async () => {
+    const { db } = criarProgressDb('ANALYZING');
+    const extract = stepFake(async () => {});
+    const match = stepFake(async () => {});
+    const { orq } = orquestrador({ extract, match }, db);
 
-    expect(validStatuses).toContain('RAW');
-    expect(validStatuses).toContain('DONE');
-    expect(validStatuses).toHaveLength(6);
+    await orq.run('job-1', 'extract');
+    await orq.run('job-1', 'match');
+
+    expect(extract.run).not.toHaveBeenCalled();
+    expect(match.run).not.toHaveBeenCalled();
   });
 
-  it('validates application status enum values', () => {
-    const validStatuses = [
-      'FOUND',
-      'INTERESTING',
-      'CV_PREPARED',
-      'APPLIED',
-      'INTERVIEW',
-      'REJECTED',
-      'OFFER',
-      'ARCHIVED',
-    ];
+  it('etapa desconhecida é ignorada sem chamar nada', async () => {
+    const { db } = criarProgressDb('RAW');
+    const { orq, enqueueJob } = orquestrador({}, db);
 
-    expect(validStatuses).toContain('FOUND');
-    expect(validStatuses).toContain('OFFER');
-    expect(validStatuses).toHaveLength(8);
+    await expect(orq.run('job-1', 'inexistente')).resolves.toBeUndefined();
+    expect(enqueueJob).not.toHaveBeenCalled();
   });
 
-  it('validates AI recommendation enum values', () => {
-    const validRecommendations = ['STRONG_APPLY', 'APPLY', 'CONSIDER', 'SKIP'];
+  it('falha marca FAILED, registra de onde parou e propaga o erro', async () => {
+    const { estado, db } = criarProgressDb('RAW');
+    const extract = stepFake(async () => {
+      // A extração marca EXTRACTING antes de chamar a IA; é esse status que
+      // precisa sobreviver no log da falha.
+      estado.status = 'EXTRACTING';
+      throw new Error('IA fora do ar');
+    });
+    const { orq } = orquestrador({ extract }, db);
 
-    expect(validRecommendations).toContain('STRONG_APPLY');
-    expect(validRecommendations).toContain('SKIP');
-    expect(validRecommendations).toHaveLength(4);
+    await expect(orq.run('job-1', 'extract')).rejects.toThrow('IA fora do ar');
+
+    expect(estado.status).toBe('FAILED');
+    expect(estado.logs).toContainEqual({ fromStatus: 'EXTRACTING', toStatus: 'FAILED' });
   });
 
-  it('validates score ranges', () => {
-    const testCases = [
-      { score: 0, valid: true },
-      { score: 50, valid: true },
-      { score: 100, valid: true },
-      { score: -1, valid: false },
-      { score: 101, valid: false },
-    ];
+  it('retry depois de falha reprocessa a etapa que falhou', async () => {
+    const { estado, db } = criarProgressDb('RAW');
+    let tentativas = 0;
 
-    for (const tc of testCases) {
-      const isValid = tc.score >= 0 && tc.score <= 100;
-      expect(isValid).toBe(tc.valid);
-    }
+    const extract = stepFake(async () => {
+      tentativas++;
+      if (tentativas === 1) {
+        estado.status = 'EXTRACTING';
+        throw new Error('falha transitória');
+      }
+      estado.status = 'MATCHING';
+    });
+
+    const { orq } = orquestrador({ extract }, db);
+
+    await expect(orq.run('job-1', 'extract')).rejects.toThrow('falha transitória');
+    expect(estado.status).toBe('FAILED');
+
+    // O retry do BullMQ apresenta o mesmo step; FAILED não pode contar como
+    // concluído, senão a vaga ficaria presa para sempre.
+    await orq.run('job-1', 'extract');
+
+    expect(tentativas).toBe(2);
+    expect(estado.status).toBe('MATCHING');
   });
 
-  it('verifies AI does not invent skills', () => {
-    // Simulated extracted skills from job
-    const extractedSkills = ['React', 'TypeScript', 'Node.js'];
+  it('retry não repete etapas anteriores à falha', async () => {
+    // Falhou na análise: extração e matching já tinham sido concluídos.
+    const { db } = criarProgressDb('FAILED');
+    await db.jobProcessingLog.create({
+      data: { jobId: 'job-1', fromStatus: 'ANALYZING', toStatus: 'FAILED', message: 'boom' },
+    });
 
-    // Simulated AI analysis output
-    const aiStrengths = ['React', 'TypeScript'];
-    const aiGaps = ['Node.js'];
+    const extract = stepFake(async () => {});
+    const match = stepFake(async () => {});
+    const analyze = stepFake(async () => {});
+    const { orq } = orquestrador({ extract, match, analyze }, db);
 
-    // Verify AI only uses skills from extraction
-    for (const skill of aiStrengths) {
-      expect(extractedSkills).toContain(skill);
-    }
-    for (const skill of aiGaps) {
-      expect(extractedSkills).toContain(skill);
-    }
+    await orq.run('job-1', 'extract');
+    await orq.run('job-1', 'match');
+    await orq.run('job-1', 'analyze');
+
+    expect(extract.run).not.toHaveBeenCalled();
+    expect(match.run).not.toHaveBeenCalled();
+    expect(analyze.run).toHaveBeenCalledTimes(1);
   });
 
-  it('verifies pipeline order', () => {
-    const pipelineSteps = ['collection', 'extraction', 'matching', 'analysis', 'complete'];
+  it('FAILED antigo, sem registro de progresso, reprocessa do zero', async () => {
+    const { db } = criarProgressDb('FAILED');
+    const extract = stepFake(async () => {});
+    const { orq } = orquestrador({ extract }, db);
 
-    expect(pipelineSteps[0]).toBe('collection');
-    expect(pipelineSteps[pipelineSteps.length - 1]).toBe('complete');
-    expect(pipelineSteps).toContain('extraction');
-    expect(pipelineSteps).toContain('matching');
-    expect(pipelineSteps).toContain('analysis');
+    await orq.run('job-1', 'extract');
+
+    expect(extract.run).toHaveBeenCalledTimes(1);
+  });
+
+  it('vaga inexistente não executa etapa', async () => {
+    const db: PipelineProgressDb = {
+      job: { findUnique: async () => null, update: async () => ({}) },
+      jobProcessingLog: { create: async () => ({}), findFirst: async () => null },
+    };
+    const extract = stepFake(async () => {});
+    const { orq } = orquestrador({ extract }, db);
+
+    await orq.run('job-1', 'extract');
+
+    expect(extract.run).not.toHaveBeenCalled();
   });
 });

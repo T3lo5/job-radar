@@ -56,3 +56,39 @@ describe('createLocationFilter com modalidade', () => {
     expect(f.isAllowed('Anywhere', '', 'remote')).toBe(true);
   });
 });
+
+describe('filtro Brasil compara por token, não por substring', () => {
+  // 'br' é substring de Cambridge e Brisbane; `includes('br')` fazia as duas
+  // passarem como vaga brasileira.
+  it('não aceita cidades estrangeiras que contêm "br"', () => {
+    const f = createLocationFilter(null, 'ON_SITE');
+    expect(f.isAllowed('Cambridge, UK', '', 'on_site')).toBe(false);
+    expect(f.isAllowed('Brisbane', '', 'on_site')).toBe(false);
+    expect(f.isAllowed('Brisbane, Australia', '', 'on_site')).toBe(false);
+  });
+
+  it('aceita cidade brasileira e sigla do país', () => {
+    const f = createLocationFilter(null, 'ON_SITE');
+    expect(f.isAllowed('Campinas, BR', '', 'on_site')).toBe(true);
+    expect(f.isAllowed('Brasília', '', 'on_site')).toBe(true);
+    expect(f.isAllowed('São Paulo, SP', '', 'on_site')).toBe(true);
+  });
+
+  it('local preferido "Cambridge, UK" não vira filtro do Brasil', () => {
+    const f = createLocationFilter('Cambridge, UK', 'ON_SITE');
+    expect(f.isAllowed('Cambridge, UK', '', 'on_site')).toBe(true);
+    expect(f.isAllowed('São Paulo, SP', '', 'on_site')).toBe(false);
+  });
+
+  it('local preferido "Campinas, BR" continua usando a lista brasileira', () => {
+    const f = createLocationFilter('Campinas, BR', 'ON_SITE');
+    expect(f.isAllowed('Campinas, BR', '', 'on_site')).toBe(true);
+    expect(f.isAllowed('Brasília', '', 'on_site')).toBe(true);
+  });
+
+  it('descrição com "Cambridge, UK" não libera vaga sem local', () => {
+    const f = createLocationFilter(null, 'ON_SITE');
+    expect(f.isAllowed('', 'Vaga presencial em Cambridge, UK', 'on_site')).toBe(false);
+    expect(f.isAllowed('', 'Vaga presencial em Campinas, BR', 'on_site')).toBe(true);
+  });
+});
